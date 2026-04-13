@@ -1,0 +1,52 @@
+src/app/(dashboard)/dashboard/page.tsx(295,48): error TS18048: 'topic.agentCount' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(297,45): error TS18048: 'topic.sentimentScore' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(329,26): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/app/(dashboard)/dashboard/page.tsx(357,27): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/app/(dashboard)/dashboard/page.tsx(357,53): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/app/(dashboard)/dashboard/page.tsx(403,66): error TS18048: 'topic.sentimentScore' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(437,57): error TS18048: 'topic.sentimentScore' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(437,108): error TS18048: 'topic.sentimentScore' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(438,57): error TS18048: 'topic.sentimentScore' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(438,109): error TS18048: 'topic.sentimentScore' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(439,57): error TS18048: 'topic.sentimentScore' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(439,109): error TS18048: 'topic.sentimentScore' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(472,15): error TS18048: 'topic.sentimentScore' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(473,46): error TS18048: 'topic.agentCount' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(474,59): error TS18048: 'topic.agentCount' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(475,55): error TS2538: Type 'undefined' cannot be used as an index type.
+src/app/(dashboard)/dashboard/page.tsx(475,159): error TS2345: Argument of type 'number | undefined' is not assignable to parameter of type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/app/(dashboard)/dashboard/page.tsx(476,58): error TS18048: 'topic.confidence' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(476,103): error TS18048: 'topic.confidence' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(498,37): error TS2538: Type 'undefined' cannot be used as an index type.
+src/app/(dashboard)/dashboard/page.tsx(578,22): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/app/(dashboard)/dashboard/page.tsx(582,25): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/app/(dashboard)/dashboard/page.tsx(583,22): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/app/(dashboard)/dashboard/page.tsx(619,32): error TS18048: 't.sentimentScore' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(619,89): error TS18048: 't.agentCount' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(666,32): error TS18048: 'score' is possibly 'undefined'.
+src/app/(dashboard)/dashboard/page.tsx(667,39): error TS2345: Argument of type 'number | undefined' is not assignable to parameter of type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/app/(dashboard)/dashboard/page.tsx(693,101): error TS18048: 'score' is possibly 'undefined'.
+src/app/(dashboard)/geo/page.tsx(123,48): error TS2538: Type 'undefined' cannot be used as an index type.
+src/app/(dashboard)/geo/page.tsx(124,51): error TS2345: Argument of type 'number | undefined' is not assignable to parameter of type 'number'.
+  Type 'undefined' is not assignable to type 'number'.
+src/app/(dashboard)/geo/page.tsx(174,46): error TS18048: 'topic.agentCount' is possibly 'undefined'.
+src/app/(dashboard)/geo/page.tsx(177,26): error TS18048: 'topic.sentimentScore' is possibly 'undefined'.
+src/app/(dashboard)/geo/page.tsx(212,83): error TS2538: Type 'undefined' cannot be used as an index type.
+src/app/pricing/page.tsx(83,17): error TS1117: An object literal cannot have multiple properties with the same name.
+src/components/ui/globe.tsx(68,20): error TS2554: Expected 1 arguments, but got 0.
+src/components/world-map.tsx(12,8): error TS7016: Could not find a declaration file for module 'react-simple-maps'. 'C:/Users/amrut/OneDrive/Desktop/miro/hemlo/node_modules/react-simple-maps/dist/index.js' implicitly has an 'any' type.
+  Try `npm i --save-dev @types/react-simple-maps` if it exists or add a new declaration (.d.ts) file containing `declare module 'react-simple-maps';`
+src/components/world-map.tsx(42,35): error TS2538: Type 'undefined' cannot be used as an index type.
+src/components/world-map.tsx(43,23): error TS18048: 'topic.sentimentScore' is possibly 'undefined'.
+src/components/world-map.tsx(43,62): error TS18048: 'topic.sentimentScore' is possibly 'undefined'.
+src/components/world-map.tsx(44,36): error TS7006: Parameter 'spot' implicitly has an 'any' type.
+src/components/world-map.tsx(87,15): error TS7031: Binding element 'geographies' implicitly has an 'any' type.
+src/components/world-map.tsx(88,30): error TS7006: Parameter 'geo' implicitly has an 'any' type.
