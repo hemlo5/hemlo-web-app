@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { LogOut, ChevronRight, Check } from "lucide-react"
+import { LogOut, ChevronRight, Check, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { createClient } from "@/utils/supabase/client"
 import { useRouter } from "next/navigation"
@@ -42,6 +42,8 @@ export default function ProfilePage() {
   const [usageToday, setUsageToday] = useState(0)
   const [totalSims, setTotalSims] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [isUpgrading, setIsUpgrading] = useState(false)
+  const [upgradeError, setUpgradeError] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -80,6 +82,29 @@ export default function ProfilePage() {
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push("/")
+  }
+
+  const handleUpgrade = async () => {
+    if (!user) return
+    setIsUpgrading(true)
+    setUpgradeError(null)
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: user.id, email: user.email }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.checkoutUrl) {
+        setUpgradeError(data.error ?? "Failed to start checkout.")
+        setIsUpgrading(false)
+        return
+      }
+      window.location.href = data.checkoutUrl
+    } catch {
+      setUpgradeError("An unexpected error occurred.")
+      setIsUpgrading(false)
+    }
   }
 
   const isPremium = profile?.tier === "premium"
@@ -228,26 +253,61 @@ export default function ProfilePage() {
                       </div>
                     ))}
                   </div>
-                  <Link
-                    href={plan.tier === "enterprise" ? "mailto:hello@hemlo.ai" : isCurrentPlan ? "#" : "/pricing"}
-                    style={{
-                      marginTop: 28,
-                      display: "block",
-                      textAlign: "center",
-                      padding: "12px",
-                      borderRadius: 999,
-                      fontSize: 13,
-                      fontWeight: 700,
-                      textDecoration: "none",
-                      cursor: isCurrentPlan ? "default" : "pointer",
-                      background: plan.highlight ? "#000" : "transparent",
-                      color: plan.highlight ? "#fff" : "#555",
-                      border: `1px solid ${plan.highlight ? "#000" : "#2a2a2a"}`,
-                      opacity: isCurrentPlan && !plan.highlight ? 0.5 : 1,
-                    }}
-                  >
-                    {isCurrentPlan ? "Current Plan" : plan.cta}
-                  </Link>
+                  {plan.tier === "premium" && !isCurrentPlan ? (
+                    <>
+                      <button
+                        onClick={handleUpgrade}
+                        disabled={isUpgrading}
+                        style={{
+                          marginTop: 28,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 8,
+                          width: "100%",
+                          padding: "12px",
+                          borderRadius: 999,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: isUpgrading ? "not-allowed" : "pointer",
+                          background: "#000",
+                          color: "#fff",
+                          border: "1px solid #000",
+                          opacity: isUpgrading ? 0.7 : 1,
+                        }}
+                      >
+                        {isUpgrading ? (
+                          <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Redirecting...</>
+                        ) : (
+                          "Upgrade to Pro"
+                        )}
+                      </button>
+                      {upgradeError && (
+                        <p style={{ fontSize: 11, color: "#ef4444", marginTop: 8, textAlign: "center" }}>{upgradeError}</p>
+                      )}
+                    </>
+                  ) : (
+                    <Link
+                      href={plan.tier === "enterprise" ? "mailto:hello@hemloai.com" : "#"}
+                      style={{
+                        marginTop: 28,
+                        display: "block",
+                        textAlign: "center",
+                        padding: "12px",
+                        borderRadius: 999,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        textDecoration: "none",
+                        cursor: isCurrentPlan ? "default" : "pointer",
+                        background: plan.highlight ? "#000" : "transparent",
+                        color: plan.highlight ? "#fff" : "#555",
+                        border: `1px solid ${plan.highlight ? "#000" : "#2a2a2a"}`,
+                        opacity: isCurrentPlan && !plan.highlight ? 0.5 : 1,
+                      }}
+                    >
+                      {isCurrentPlan ? "Current Plan" : plan.cta}
+                    </Link>
+                  )}
                 </div>
               )
             })}

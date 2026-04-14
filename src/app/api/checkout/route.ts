@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import DodoPayments from "dodopayments"
 
-const dodo = new DodoPayments({
-  bearerToken: process.env.DODO_API_KEY!,
-  // Switch to "live_mode" when you go live
-  environment: (process.env.DODO_ENVIRONMENT as "test_mode" | "live_mode") ?? "test_mode",
-})
-
 export async function POST(req: NextRequest) {
+  // Initialize inside the handler so missing env vars surface as a 500, not a module crash
+  const dodo = new DodoPayments({
+    bearerToken: process.env.DODO_API_KEY ?? (() => { throw new Error("DODO_API_KEY is not set") })(),
+    environment: (process.env.DODO_ENVIRONMENT as "test_mode" | "live_mode") ?? "test_mode",
+  })
+
   try {
     const { user_id, email } = await req.json()
 
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       },
       // Redirect back to your app after payment
       success_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment-success`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/pricing`,
+      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/profile`,
     })
 
     return NextResponse.json({ checkoutUrl: session.checkout_url })

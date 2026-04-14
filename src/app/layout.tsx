@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { GoogleAnalytics } from "@next/third-parties/google"
 import "./globals.css"
 
 export const metadata: Metadata = {
@@ -26,7 +27,10 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <GoogleAnalytics gaId="G-BGG7CNDSK7" />
+      </body>
     </html>
   )
 }
