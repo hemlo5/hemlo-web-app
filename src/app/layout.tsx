@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: "HEMLO predicts how humans react to anything — trades, ideas, tweets, world events. Run the simulation before you commit.",
   keywords: ["AI simulation", "prediction", "sentiment analysis", "future simulation", "market prediction"],
   icons: {
-    icon: "/favicon.svg",
+    icon: "/favicon.png",
   },
   openGraph: {
     title: "HEMLO — Simulate Reality. Before You Live It.",
