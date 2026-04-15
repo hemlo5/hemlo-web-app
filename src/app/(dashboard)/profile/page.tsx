@@ -53,18 +53,6 @@ export default function ProfilePage() {
       if (!user) { router.push("/"); return }
       setUser(user)
 
-      // ── Local webhooks fallback: if redirected with ?upgrade=success, manually confirm ──
-      const searchParams = new URLSearchParams(window.location.search)
-      if (searchParams.get("upgrade") === "success") {
-        try {
-          await fetch("/api/confirm-payment", { method: "POST" })
-          // Remove query param from URL without reloading
-          window.history.replaceState({}, document.title, window.location.pathname)
-        } catch (err) {
-          console.error("Local confirm sync failed:", err)
-        }
-      }
-
       // Profile row
       const { data: profileData } = await supabase
         .from("profiles")
