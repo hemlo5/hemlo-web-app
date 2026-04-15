@@ -26,6 +26,28 @@ export default function PricingPage() {
           .then(({ data }: any) => {
             if (data?.tier) setTier(data.tier)
             if (data?.has_starter_pack) setHasStarterPack(true)
+
+            // Auto-checkout: if landing page sent ?checkout=planId, trigger checkout immediately
+            const params = new URLSearchParams(window.location.search)
+            const autoCheckout = params.get("checkout")
+            if (autoCheckout && ["starter", "pro", "founder"].includes(autoCheckout)) {
+              // Guard: don't buy if already owned
+              const userTier = data?.tier || "normal"
+              const owns =
+                (autoCheckout === "pro" && (userTier === "pro" || userTier === "premium")) ||
+                (autoCheckout === "founder" && userTier === "founder") ||
+                (autoCheckout === "starter" && data?.has_starter_pack)
+              if (!owns) {
+                fetch("/api/checkout", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ user_id: user.id, email: user.email, plan: autoCheckout }),
+                })
+                  .then(r => r.json())
+                  .then(d => { if (d.checkoutUrl) window.location.href = d.checkoutUrl })
+                  .catch(() => {})
+              }
+            }
           })
       }
     })

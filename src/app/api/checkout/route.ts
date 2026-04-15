@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import DodoPayments from "dodopayments"
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+}
+
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: CORS_HEADERS })
+}
+
 export async function POST(req: NextRequest) {
   // Initialize inside the handler so missing env vars surface as a 500, not a module crash
   const dodo = new DodoPayments({
@@ -14,7 +24,7 @@ export async function POST(req: NextRequest) {
     if (!user_id || !email) {
       return NextResponse.json(
         { error: "user_id and email are required" },
-        { status: 400 }
+        { status: 400, headers: CORS_HEADERS }
       )
     }
 
@@ -27,7 +37,7 @@ export async function POST(req: NextRequest) {
     if (!productId) {
       return NextResponse.json(
         { error: `Dodo Product ID for plan '${plan}' is not configured in environment variables.` },
-        { status: 500 }
+        { status: 500, headers: CORS_HEADERS }
       )
     }
 
@@ -52,12 +62,13 @@ export async function POST(req: NextRequest) {
       cancel_url: `${origin}/profile`,
     })
 
-    return NextResponse.json({ checkoutUrl: session.checkout_url })
+    return NextResponse.json({ checkoutUrl: session.checkout_url }, { headers: CORS_HEADERS })
   } catch (err: any) {
     console.error("[/api/checkout] Error:", err?.message ?? err)
     return NextResponse.json(
       { error: "Failed to create checkout session" },
-      { status: 500 }
+      { status: 500, headers: CORS_HEADERS }
     )
   }
 }
+
