@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
         user_id,
       },
       // Redirect back to your app after payment
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment-success`,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/profile?upgrade=success`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/profile`,
     })
 
