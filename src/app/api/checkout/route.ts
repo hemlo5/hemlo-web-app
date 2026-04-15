@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
       // CRITICAL: We store the Supabase user_id here so the webhook can find the user.
       metadata: {
         user_id,
+        plan,
       },
       // return_url = where Dodo sends user after they view the order summary and click continue
       // cancel_url = where Dodo sends user if they click back/cancel

@@ -48,13 +48,14 @@ async function processEvent(event: any) {
   // ── 4. Extract user_id from the payment metadata ──────────────────────────
   const metadata = event.data?.metadata as Record<string, string> | undefined
   const userId = metadata?.user_id
+  const plan = metadata?.plan || "pro" // default fallback
 
   if (!userId) {
     console.error("[dodo-webhook] payment.succeeded but no user_id in metadata. Payload:", JSON.stringify(event.data))
     return
   }
 
-  console.log(`[dodo-webhook] Upgrading user ${userId} to premium...`)
+  console.log(`[dodo-webhook] Processing ${plan} purchase for user: ${userId}...`)
 
   // ── 5. Update Supabase using the service-role key (bypasses RLS) ──────────
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -69,14 +70,23 @@ async function processEvent(event: any) {
     auth: { persistSession: false },
   })
 
+  let updatePayload: any = {}
+  if (plan === "starter") {
+    updatePayload = { has_starter_pack: true }
+  } else if (plan === "pro") {
+    updatePayload = { tier: "pro" }
+  } else if (plan === "founder") {
+    updatePayload = { tier: "founder" }
+  }
+
   const { error } = await supabaseAdmin
     .from("profiles")
-    .update({ tier: "premium" })
+    .update(updatePayload)
     .eq("id", userId)
 
   if (error) {
-    console.error(`[dodo-webhook] Failed to update tier for user ${userId}:`, error)
+    console.error(`[dodo-webhook] Failed to update profile for user ${userId}:`, error)
   } else {
-    console.log(`[dodo-webhook] ✅ User ${userId} successfully upgraded to premium.`)
+    console.log(`[dodo-webhook] ✅ User ${userId} successfully updated with plan: ${plan}.`)
   }
 }
