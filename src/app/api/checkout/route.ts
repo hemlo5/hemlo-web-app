@@ -38,14 +38,10 @@ export async function POST(req: NextRequest) {
       metadata: {
         user_id,
       },
-      // return_url = where to send after payment success/failure
-      // cancel_url = where to send if user clicks back/cancel
-      // redirect_immediately = skip Dodo's order summary page and redirect right away
+      // return_url = where Dodo sends user after they view the order summary and click continue
+      // cancel_url = where Dodo sends user if they click back/cancel
       return_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment-success`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/profile`,
-      feature_flags: {
-        redirect_immediately: true,
-      },
     })
 
     return NextResponse.json({ checkoutUrl: session.checkout_url })
