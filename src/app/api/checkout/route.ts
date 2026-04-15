@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   })
 
   try {
-    const { user_id, email } = await req.json()
+    const { user_id, email, plan = "pro" } = await req.json()
 
     if (!user_id || !email) {
       return NextResponse.json(
@@ -18,10 +18,15 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const productId = process.env.DODO_PRODUCT_ID
+    // Map the plan request to specific Dodo Product IDs
+    let productId = process.env.DODO_PRODUCT_ID // fallback default
+    if (plan === "starter") productId = process.env.DODO_PRODUCT_ID_STARTER
+    if (plan === "pro") productId = process.env.DODO_PRODUCT_ID_PRO || process.env.DODO_PRODUCT_ID
+    if (plan === "founder") productId = process.env.DODO_PRODUCT_ID_FOUNDER
+
     if (!productId) {
       return NextResponse.json(
-        { error: "DODO_PRODUCT_ID env variable is not set" },
+        { error: `Dodo Product ID for plan '${plan}' is not configured in environment variables.` },
         { status: 500 }
       )
     }

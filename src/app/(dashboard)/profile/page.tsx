@@ -10,29 +10,41 @@ import { useRouter } from "next/navigation"
 
 const PLANS = [
   {
+    id: "free",
     name: "Free",
     price: "$0",
     period: "",
-    features: ["2 simulations / day", "Standard parameters", "Dashboard access", "Hot & trending feed"],
+    features: ["2 simulations / day", "Standard parameters", "Dashboard access"],
     cta: "Current Plan",
     tier: "free",
   },
   {
+    id: "starter",
+    name: "Starter Pack",
+    price: "$5",
+    period: "",
+    features: ["5 extra simulations", "One-time purchase", "No recurring fees"],
+    cta: "Buy Starter Pack",
+    isTripwire: true,
+  },
+  {
+    id: "pro",
     name: "Pro",
-    price: "$29",
+    price: "$23.99",
     period: "/mo",
-    features: ["10 simulations / day", "All parameters unlocked", "Priority AI compute", "Export & API access"],
+    features: ["50 simulations / month", "All parameters unlocked", "Deep analysis & export"],
     cta: "Upgrade to Pro",
-    tier: "premium",
+    tier: "pro",
     highlight: true,
   },
   {
-    name: "Enterprise",
-    price: "$99",
+    id: "founder",
+    name: "Founder",
+    price: "$79.00",
     period: "/mo",
-    features: ["Unlimited simulations", "Dedicated compute", "Custom integrations", "Priority support"],
-    cta: "Contact Sales",
-    tier: "enterprise",
+    features: ["200 simulations / month", "Full API Access", "Priority Support"],
+    cta: "Become a Founder",
+    tier: "founder",
   },
 ]
 
@@ -56,7 +68,7 @@ export default function ProfilePage() {
       // Profile row
       const { data: profileData } = await supabase
         .from("profiles")
-        .select("*, simulations_run")
+        .select("*, simulations_run, has_starter_pack")
         .eq("id", user.id)
         .single()
       setProfile(profileData)
@@ -84,15 +96,15 @@ export default function ProfilePage() {
     router.push("/")
   }
 
-  const handleUpgrade = async () => {
+  const handleUpgrade = async (planId: string) => {
     if (!user) return
-    setIsUpgrading(true)
+    setIsUpgrading(planId as any)
     setUpgradeError(null)
     try {
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: user.id, email: user.email }),
+        body: JSON.stringify({ user_id: user.id, email: user.email, plan: planId }),
       })
       const data = await res.json()
       if (!res.ok || !data.checkoutUrl) {
@@ -107,8 +119,9 @@ export default function ProfilePage() {
     }
   }
 
-  const isPremium = profile?.tier === "premium"
-  const limit = isPremium ? 10 : 2
+  const isPremium = profile?.tier === "pro" || profile?.tier === "founder" || profile?.tier === "premium"
+  const limit = profile?.tier === "founder" ? 200 : isPremium ? 50 : 2
+  const hasStarterPack = profile?.has_starter_pack === true
   const usedPct = Math.min((usageToday / limit) * 100, 100)
   const memberSince = profile?.created_at
     ? new Date(profile.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long" })
@@ -253,60 +266,78 @@ export default function ProfilePage() {
                       </div>
                     ))}
                   </div>
-                  {plan.tier === "premium" && !isCurrentPlan ? (
-                    <>
-                      <button
-                        onClick={handleUpgrade}
-                        disabled={isUpgrading}
-                        style={{
-                          marginTop: 28,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 8,
-                          width: "100%",
-                          padding: "12px",
-                          borderRadius: 999,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          cursor: isUpgrading ? "not-allowed" : "pointer",
-                          background: "#000",
-                          color: "#fff",
-                          border: "1px solid #000",
-                          opacity: isUpgrading ? 0.7 : 1,
-                        }}
-                      >
-                        {isUpgrading ? (
-                          <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Redirecting...</>
-                        ) : (
-                          "Upgrade to Pro"
-                        )}
-                      </button>
-                      {upgradeError && (
-                        <p style={{ fontSize: 11, color: "#ef4444", marginTop: 8, textAlign: "center" }}>{upgradeError}</p>
-                      )}
-                    </>
-                  ) : (
-                    <Link
-                      href={plan.tier === "enterprise" ? "mailto:hello@hemloai.com" : "#"}
-                      style={{
-                        marginTop: 28,
-                        display: "block",
-                        textAlign: "center",
-                        padding: "12px",
-                        borderRadius: 999,
-                        fontSize: 13,
-                        fontWeight: 700,
-                        textDecoration: "none",
-                        cursor: isCurrentPlan ? "default" : "pointer",
-                        background: plan.highlight ? "#000" : "transparent",
-                        color: plan.highlight ? "#fff" : "#555",
-                        border: `1px solid ${plan.highlight ? "#000" : "#2a2a2a"}`,
-                        opacity: isCurrentPlan && !plan.highlight ? 0.5 : 1,
-                      }}
-                    >
-                      {isCurrentPlan ? "Current Plan" : plan.cta}
-                    </Link>
+
+                  {(() => {
+                    const currentTier = profile?.tier || "free"
+                    let isCurrentPlan = false
+                    if (plan.id === "free" && currentTier !== "pro" && currentTier !== "founder" && currentTier !== "premium") isCurrentPlan = true
+                    if (plan.id === "pro" && (currentTier === "pro" || currentTier === "premium")) isCurrentPlan = true
+                    if (plan.id === "founder" && currentTier === "founder") isCurrentPlan = true
+
+                    const isBoughtStarter = plan.id === "starter" && hasStarterPack
+
+                    if (isCurrentPlan || isBoughtStarter) {
+                      return (
+                        <div
+                          style={{
+                            marginTop: 28,
+                            display: "block",
+                            textAlign: "center",
+                            padding: "12px",
+                            borderRadius: 999,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            background: plan.highlight ? "#000" : "transparent",
+                            color: plan.highlight ? "#fff" : "#555",
+                            border: `1px solid ${plan.highlight ? "#000" : "rgba(255,255,255,0.1)"}`,
+                            opacity: 0.5,
+                            cursor: "default"
+                          }}
+                        >
+                          {isBoughtStarter ? "Purchased" : "Current Plan"}
+                        </div>
+                      )
+                    }
+
+                    if (plan.id !== "free") {
+                      return (
+                        <>
+                          <button
+                            onClick={() => handleUpgrade(plan.id)}
+                            disabled={isUpgrading === plan.id}
+                            style={{
+                              marginTop: 28,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 8,
+                              width: "100%",
+                              padding: "12px",
+                              borderRadius: 999,
+                              fontSize: 13,
+                              fontWeight: 700,
+                              cursor: isUpgrading === plan.id ? "not-allowed" : "pointer",
+                              background: plan.highlight ? "#000" : "#1a1a1a",
+                              color: plan.highlight ? "#fff" : "#fff",
+                              border: `1px solid ${plan.highlight ? "#000" : "#333"}`,
+                              opacity: isUpgrading === plan.id ? 0.7 : 1,
+                              transition: "all 0.2s"
+                            }}
+                          >
+                            {isUpgrading === plan.id ? (
+                              <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Redirecting...</>
+                            ) : (
+                              plan.cta
+                            )}
+                          </button>
+                        </>
+                      )
+                    }
+                    return null
+                  })()}
+                  
+                  {upgradeError && plan.id === isUpgrading && (
+                    <p style={{ fontSize: 11, color: "#ef4444", marginTop: 8, textAlign: "center" }}>{upgradeError}</p>
                   )}
                 </div>
               )
