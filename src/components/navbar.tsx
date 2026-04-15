@@ -24,9 +24,13 @@ export function Navbar() {
   }, [])
 
   const handleSignIn = async () => {
+    const redirectTo = (typeof window !== "undefined" && process.env.NEXT_PUBLIC_APP_URL) 
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/home`
+      : `${window.location.origin}/auth/callback?next=/home`
+
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback?next=/home` }
+      options: { redirectTo }
     })
   }
 

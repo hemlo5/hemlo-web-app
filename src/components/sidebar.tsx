@@ -147,10 +147,14 @@ export function Sidebar() {
 
   const doGoogleSignIn = async () => {
     setShowSignIn(false);
+    const redirectTo = (typeof window !== "undefined" && process.env.NEXT_PUBLIC_APP_URL)
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/home`
+      : `${window.location.origin}/auth/callback?next=/home`;
+
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/home`,
+        redirectTo,
         queryParams: { prompt: "select_account", access_type: "offline" },
       },
     });
