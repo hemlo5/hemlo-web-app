@@ -30,9 +30,6 @@ export async function POST(req: NextRequest) {
       product_cart: [{ product_id: productId, quantity: 1 }],
       customer: {
         email,
-        // Creates or retrieves a Dodo customer record automatically.
-        // Pass 'create' so it links this email to a customer.
-        create_new_customer: true,
       },
       // CRITICAL: We store the Supabase user_id here so the webhook can find the user.
       metadata: {
