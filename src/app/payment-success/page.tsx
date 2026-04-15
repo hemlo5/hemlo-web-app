@@ -1,26 +1,34 @@
 "use client"
 
 import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { createClient } from "@/utils/supabase/client"
 
 export default function PaymentSuccessPage() {
-  const router = useRouter()
-
   useEffect(() => {
     async function confirmAndRedirect() {
       try {
-        await fetch("/api/confirm-payment", { method: "POST" })
+        // Get user client-side — works reliably after external redirect
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+
+        if (user) {
+          await fetch("/api/confirm-payment", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: user.id }),
+          })
+        }
       } catch (err) {
-        // Silently fail and rely on the webhook in production
+        console.error("[payment-success] error:", err)
       } finally {
-        // Instantly redirect back to profile so the user doesn't see this page
-        router.replace("/profile")
+        // Hard redirect so profile page fully reloads with latest DB data
+        window.location.href = "/profile"
       }
     }
-    confirmAndRedirect()
-  }, [router])
 
-  return (
-    <div style={{ minHeight: "100vh", background: "#000" }} />
-  )
+    confirmAndRedirect()
+  }, [])
+
+  // Invisible page — the user should never see this
+  return <div style={{ minHeight: "100vh", background: "#000" }} />
 }
