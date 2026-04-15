@@ -54,15 +54,19 @@ const MOCK_TOPICS: TrendingTopic[] = [
   },
 ]
 
-function triggerCronSeed() {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
-  fetch(`${baseUrl}/api/cron/refresh-trending`, {
+function triggerCronSeed(origin: string) {
+  fetch(`${origin}/api/cron/refresh-trending`, {
     method: "GET",
     headers: { "x-cron-secret": process.env.CRON_SECRET ?? "dev" },
   }).catch(() => {})
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  // Derive origin dynamically from request headers
+  const host = req.headers.get("host")
+  const protocol = host?.includes("localhost") ? "http" : "https"
+  const origin = `${protocol}://${host}`
+
   const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
@@ -84,7 +88,7 @@ export async function GET() {
       .limit(80)
 
     if (error || !data || data.length === 0) {
-      triggerCronSeed()
+      triggerCronSeed(origin)
       return NextResponse.json(
         { topics: MOCK_TOPICS, source: "mock_seeding", timestamp: new Date().toISOString() },
         { status: 200 }

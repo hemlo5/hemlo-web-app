@@ -26,6 +26,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Derive origin dynamically from request headers so it works on any domain
+    const host = req.headers.get("host")
+    const protocol = host?.includes("localhost") ? "http" : "https"
+    const origin = `${protocol}://${host}`
+
     const session = await dodo.checkoutSessions.create({
       product_cart: [{ product_id: productId, quantity: 1 }],
       customer: {
@@ -37,8 +42,8 @@ export async function POST(req: NextRequest) {
       },
       // return_url = where Dodo sends user after they view the order summary and click continue
       // cancel_url = where Dodo sends user if they click back/cancel
-      return_url: `${process.env.NEXT_PUBLIC_APP_URL}/payment-success`,
-      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/profile`,
+      return_url: `${origin}/payment-success`,
+      cancel_url: `${origin}/profile`,
     })
 
     return NextResponse.json({ checkoutUrl: session.checkout_url })

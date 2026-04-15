@@ -6,7 +6,11 @@ export async function GET(req: Request) {
     if (process.env.NODE_ENV === "production") return new Response("Unauthorized", { status: 401 })
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+  // Derive origin dynamically from request headers
+  const host = req.headers.get("host")
+  const protocol = host?.includes("localhost") ? "http" : "https"
+  const origin = `${protocol}://${host}`
+  const baseUrl = origin
 
   // Fire off all cache-warming requests in parallel without waiting (fire and forget)
   // or await them if we want to ensure Vercel doesn't kill the lambda
