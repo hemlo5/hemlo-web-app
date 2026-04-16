@@ -34,12 +34,22 @@ export async function GET(request: NextRequest) {
   if (code) {
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
+    
     if (!error) {
       return NextResponse.redirect(`${origin}${next}`)
     }
+    
+    // Check if maybe they are already logged in (happens with rapid double-fires)
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session) {
+      return NextResponse.redirect(`${origin}${next}`)
+    }
+    
     console.error('[auth/callback] exchangeCodeForSession error:', error.message)
+    // Redirect with the error so we can debug it
+    return NextResponse.redirect(`${origin}${next}?auth_error=${encodeURIComponent(error.message)}`)
   }
 
-  // return the user to an error page with instructions
-  return NextResponse.redirect(`${origin}/auth/auth-code-error`)
+  // If no code was provided
+  return NextResponse.redirect(`${origin}${next}?auth_error=No_code_provided`)
 }
