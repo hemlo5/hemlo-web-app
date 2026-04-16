@@ -11,17 +11,22 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
+        name: 'hemlo-auth-token',
+        domain: '.hemloai.com',
         getAll() {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet: any[]) {
-          cookiesToSet.forEach(({ name, value, options }: any) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({
-            request,
+          const isLocal = request.headers.get('host')?.includes('localhost')
+          cookiesToSet.forEach(({ name, value, options }: any) => {
+            const finalOptions = { 
+              ...options, 
+              domain: isLocal ? undefined : '.hemloai.com',
+              secure: isLocal ? false : options.secure
+            }
+            request.cookies.set(name, value)
+            supabaseResponse.cookies.set(name, value, finalOptions)
           })
-          cookiesToSet.forEach(({ name, value, options }: any) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
         },
       },
     }
