@@ -1,11 +1,10 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
-import { cookies, headers } from 'next/headers'
+import { cookies } from 'next/headers'
+
+const isProd = process.env.NODE_ENV === 'production'
 
 export async function createClient() {
   const cookieStore = await cookies()
-  const headerStore = await headers()
-  const host = headerStore.get('host') ?? ''
-  const isLocal = host.includes('localhost')
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,11 +20,11 @@ export async function createClient() {
               name,
               value,
               ...options,
-              // Share cookies across .hemloai.com subdomains in production
-              ...(isLocal ? {} : { domain: '.hemloai.com' }),
+              // In production, share cookies across all .hemloai.com subdomains
+              ...(isProd ? { domain: '.hemloai.com' } : {}),
             })
           } catch {
-            // Ignore - called from Server Component, middleware will handle it
+            // Called from Server Component — middleware will handle session refresh
           }
         },
         remove(name: string, options: CookieOptions) {
@@ -34,10 +33,10 @@ export async function createClient() {
               name,
               value: '',
               ...options,
-              ...(isLocal ? {} : { domain: '.hemloai.com' }),
+              ...(isProd ? { domain: '.hemloai.com' } : {}),
             })
           } catch {
-            // Ignore - called from Server Component, middleware will handle it
+            // Called from Server Component — middleware will handle session refresh
           }
         },
       },
