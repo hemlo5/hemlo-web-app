@@ -1,8 +1,11 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 
 export async function createClient() {
   const cookieStore = await cookies()
+  const headerStore = await headers()
+  const host = headerStore.get('host') ?? ''
+  const isLocal = host.includes('localhost')
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,20 +17,27 @@ export async function createClient() {
         },
         set(name: string, value: string, options: CookieOptions) {
           try {
-            cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // The `set` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
+            cookieStore.set({
+              name,
+              value,
+              ...options,
+              // Share cookies across .hemloai.com subdomains in production
+              ...(isLocal ? {} : { domain: '.hemloai.com' }),
+            })
+          } catch {
+            // Ignore - called from Server Component, middleware will handle it
           }
         },
         remove(name: string, options: CookieOptions) {
           try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // The `delete` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
+            cookieStore.set({
+              name,
+              value: '',
+              ...options,
+              ...(isLocal ? {} : { domain: '.hemloai.com' }),
+            })
+          } catch {
+            // Ignore - called from Server Component, middleware will handle it
           }
         },
       },

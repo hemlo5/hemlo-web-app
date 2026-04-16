@@ -6,35 +6,32 @@ export async function updateSession(request: NextRequest) {
     request,
   })
 
+  const isLocal = request.headers.get('host')?.includes('localhost') ?? false
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookieOptions: {
-        name: 'hemlo-auth-token',
-        domain: '.hemloai.com',
-      },
       cookies: {
         getAll() {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet: any[]) {
-          const isLocal = request.headers.get('host')?.includes('localhost')
+          cookiesToSet.forEach(({ name, value }: any) => request.cookies.set(name, value))
+          supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }: any) => {
-            const finalOptions = { 
-              ...options, 
-              domain: isLocal ? undefined : '.hemloai.com',
-              secure: isLocal ? false : options.secure
-            }
-            request.cookies.set(name, value)
-            supabaseResponse.cookies.set(name, value, finalOptions)
+            supabaseResponse.cookies.set(name, value, {
+              ...options,
+              // On production: share cookies across .hemloai.com subdomains
+              ...(isLocal ? {} : { domain: '.hemloai.com' }),
+            })
           })
         },
       },
     }
   )
 
-  // This will refresh session if expired
+  // Refresh session if expired
   await supabase.auth.getUser()
 
   return supabaseResponse
