@@ -30,7 +30,7 @@ export function NewsTicker() {
   if (staples.loading || trending.loading) return <div style={{ height: 52, background: "var(--bg-primary)", borderBottom: "1px solid var(--border)" }} />
 
   return (
-    <div style={{ background: "var(--bg-primary)", borderBottom: "1px solid var(--border)", height: 52, overflow: "hidden", display: "flex", alignItems: "center", flexShrink: 0 }}>
+    <div style={{ background: "#FFFFFF", borderBottom: "1px solid rgba(0,0,0,0.1)", height: 52, overflow: "hidden", display: "flex", alignItems: "center", flexShrink: 0 }}>
       <div style={{ overflow: "hidden", flex: 1, position: "relative", height: "100%" }}>
         <motion.div
           key={items.length}
@@ -39,14 +39,14 @@ export function NewsTicker() {
           style={{ display: "flex", alignItems: "center", height: "100%", gap: 0, whiteSpace: "nowrap" }}
         >
           {ticker.map((item, i) => {
-            const divColor = (item as any).divergence > 0 ? "var(--success)" : (item as any).divergence < 0 ? "var(--error)" : "var(--text-muted)"
+            const divColor = (item as any).divergence > 0 ? "#16a34a" : (item as any).divergence < 0 ? "#dc2626" : "#666666"
             const odds = (item as any).polymarketOdds ? `${(item as any).polymarketOdds}%` : null
             return (
-              <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 12, padding: "0 34px", fontSize: 14, color: "var(--text-secondary)", fontWeight: 500 }}>
-                <span style={{ color: "var(--border-hover)", fontSize: 11 }}>◆</span>
-                {(item as any).category && <span style={{ fontSize: 12, fontWeight: 800, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 0.8 }}>{(item as any).category}</span>}
-                <span style={{ color: "var(--text-primary)" }}>{(item as any).topic}</span>
-                {odds && <span style={{ fontWeight: 800, color: divColor }}>{odds}</span>}
+              <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 12, padding: "0 34px", fontSize: 13, color: "#000000", fontWeight: 700 }}>
+                <span style={{ color: "rgba(0,0,0,0.2)", fontSize: 11 }}>◆</span>
+                {(item as any).category && <span style={{ fontSize: 11, fontWeight: 900, color: "#000000", textTransform: "uppercase", letterSpacing: 1.2, opacity: 0.5 }}>{(item as any).category}</span>}
+                <span style={{ color: "#000000" }}>{(item as any).topic}</span>
+                {odds && <span style={{ fontWeight: 900, color: divColor }}>{odds}</span>}
               </span>
             )
           })}

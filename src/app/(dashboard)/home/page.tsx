@@ -54,88 +54,97 @@ function StatPill({ label, value, color }: { label: string; value: string; color
 
 // ── SIMULATION CARD ──────────────────────────────────────────────────────────
 function SimCard({ t, index }: { t: TrendingTopic; index: number }) {
-  const crowd = parseInt(t.polymarketOdds ?? "50")
-  const hemlo = t.hemloOdds ?? 50
-  const div = t.divergence ?? (hemlo - crowd)
-  const divColor = div > 0 ? "#22c55e" : div < 0 ? "#ef4444" : "#888"
-  const isHot = Math.abs(div) > 15
+  const isCat = t.marketType === "categorical";
+  const outcomes = isCat && t.outcomes && t.outcomes.length > 0 ? t.outcomes : [
+    { label: "Yes", prob: parseInt(t.polymarketOdds || "50") },
+    { label: "No", prob: 100 - parseInt(t.polymarketOdds || "50") }
+  ];
+
+  const colors = ["#10b981", "#3b82f6", "#f59e0b", "#a855f7"]; // Polymarket-style colors
 
   return (
     <Link href={`/simulate/staple/report?topic=${encodeURIComponent(t.topic)}`} style={{ textDecoration: "none" }}>
       <motion.div
         initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
         transition={{ delay: index * 0.05 }}
-        whileHover={{ y: -4, borderColor: "var(--accent)", boxShadow: "0 8px 32px rgba(102,244,255,0.12)" }}
+        whileHover={{ y: -2, backgroundColor: "rgba(255,255,255,0.03)" }}
         style={{
-          background: "#050505", border: "1px solid var(--border)", borderRadius: 14,
-          padding: "20px", cursor: "pointer", transition: "all 0.2s",
-          display: "flex", flexDirection: "column", gap: 12,
+          background: "#0c0e12", // Dark, clean background like the image
+          border: "1px solid #1e222b",
+          borderRadius: 12,
+          padding: "24px",
+          cursor: "pointer",
+          transition: "all 0.2s",
+          display: "flex", flexDirection: "column", gap: 18,
+          height: "100%",
         }}
       >
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 9, fontWeight: 800, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 1, background: "rgba(102,244,255,0.1)", padding: "2px 8px", borderRadius: 4 }}>
-              {t.type === "prediction" ? "PREDICTION" : "NEWS"}
-            </span>
+        {/* Header: Icon + Category */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 22, height: 22, borderRadius: 4, overflow: "hidden", background: "#1f2937", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {t.icon ? (
+              <img src={t.icon} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { e.currentTarget.style.display = "none" }} />
+            ) : (
+              <div style={{ width: 14, height: 14, background: "white", borderRadius: 2 }} />
+            )}
           </div>
-          {isHot && (
-            <span style={{ fontSize: 9, fontWeight: 800, color: "#ef4444", background: "#ef444418", padding: "2px 6px", borderRadius: 4, display: "flex", alignItems: "center", gap: 3 }}>
-              <Flame size={9} /> HOT
-            </span>
-          )}
+          <span style={{ fontSize: 11, fontWeight: 800, color: "#8a94a6", textTransform: "uppercase", letterSpacing: 0.8 }}>
+            {t.category || t.section || "PREDICTION"}
+          </span>
         </div>
 
-        {/* Question */}
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          {t.icon && (
-            <img
-              src={t.icon}
-              alt=""
-              style={{
-                width: 44,
-                height: 44,
-                objectFit: "cover",
-                flexShrink: 0,
-                borderRadius: 8,
-              }}
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
-          )}
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.45, flex: 1, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-            {t.topic}
-          </div>
+        {/* Title / Question */}
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#f8f9fa", lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          {t.topic}
         </div>
 
-        {/* Bars */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 10, color: "var(--text-muted)", width: 60 }}>Polymarket</span>
-            <div style={{ flex: 1, height: 6, background: "#111", borderRadius: 99, overflow: "hidden" }}>
-              <motion.div initial={{ width: 0 }} animate={{ width: `${crowd}%` }} transition={{ duration: 0.8, delay: 0.1 + index * 0.05 }}
-                style={{ height: "100%", background: "#555", borderRadius: 99 }} />
-            </div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", width: 32, textAlign: "right" }}>{crowd}%</span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 10, color: "var(--accent)", width: 40 }}>HEMLO</span>
-            <div style={{ flex: 1, height: 6, background: "#111", borderRadius: 99, overflow: "hidden" }}>
-              <motion.div initial={{ width: 0 }} animate={{ width: `${hemlo}%` }} transition={{ duration: 0.8, delay: 0.2 + index * 0.05 }}
-                style={{ height: "100%", background: "var(--accent)", borderRadius: 99 }} />
-            </div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", width: 32, textAlign: "right" }}>{hemlo}%</span>
-          </div>
+        {/* Outcomes List */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 4, flex: 1 }}>
+          {outcomes.slice(0, Math.max(2, outcomes.length)).slice(0, 3).map((o, i) => {
+             const prob = o.prob || 0;
+             const impliedMultiplier = (100 / Math.max(1, prob)).toFixed(2) + "x";
+             const color = colors[i % colors.length];
+
+             return (
+               <div key={i} style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+                 <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, paddingRight: 20 }}>
+                   <div style={{ fontSize: 14, fontWeight: 500, color: "#f1f5f9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                     {o.label}
+                   </div>
+                   <div style={{ height: 2, background: "#1e293b", position: "relative", width: "100%", maxWidth: 120 }}>
+                     <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${prob}%`, background: color }} />
+                   </div>
+                 </div>
+
+                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                   <span style={{ fontSize: 13, fontWeight: 600, color: "#64748b" }}>
+                     {impliedMultiplier}
+                   </span>
+                   <div style={{
+                     border: `1px solid ${color}60`, 
+                     borderRadius: 20,
+                     minWidth: 54,
+                     height: 30,
+                     display: "flex", alignItems: "center", justifyContent: "center",
+                     fontSize: 14, fontWeight: 800, color: "#f8f9fa"
+                   }}>
+                     {Math.round(prob)}%
+                   </div>
+                 </div>
+               </div>
+             )
+          })}
         </div>
 
         {/* Footer */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4, borderTop: "1px solid #111" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: divColor }}>{div > 0 ? "+" : ""}{div}% divergence</span>
-            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>· {t.confidence ?? 80}% conf</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginTop: "auto", paddingTop: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: "#8a94a6" }}>
+            {t.divergence && Math.abs(t.divergence) > 5 ? (
+              <span style={{ color: t.divergence > 0 ? colors[0] : colors[1], fontWeight: 700 }}>
+                {Math.abs(t.divergence)}% AI Div
+              </span>
+            ) : "1 market"}
           </div>
-          <ArrowRight size={12} color="var(--accent)" />
         </div>
       </motion.div>
     </Link>

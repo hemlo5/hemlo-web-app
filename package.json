@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"next dev\" \"python -u ../gem.py\"",
+    "dev": "concurrently \"next dev -p 8080\" \"python -u ../gem.py\"",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
