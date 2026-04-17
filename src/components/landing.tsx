@@ -49,7 +49,6 @@ const GLOBE_ARCS = [
 ]
 
 const MODES = [
-  { icon: TrendingUp, label: "Stock Simulator", description: "Predict trader sentiment and simulate price behavior.", href: "#", active: false, color: "#22c55e" },
   { icon: Globe2, label: "Geopolitics", description: "Forecast how nations and factions will react to world events.", href: "#", active: false, color: "#b3e600" },
   { icon: Rocket, label: "Product Launch", description: "Simulate user adoption, objections, and feature feedback.", href: "#", active: false, color: "#06b6d4" },
   { icon: Brain, label: "Custom Simulation", description: "Fully open-ended simulation — any prompt, any stakes.", href: "/simulate/mirofish", active: true, color: "#ffffff" },

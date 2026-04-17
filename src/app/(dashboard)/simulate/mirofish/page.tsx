@@ -11,10 +11,10 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AgentNetworkCanvas } from "@/components/agent-network-canvas";
 import { MirofishGraphPanel } from "@/components/mirofish-graph-panel";
+import { TopSimulationsSection } from "@/components/top-simulations-section";
 
 // ── DOMAIN PILLS ──────────────────────────────────────────────────────────────
 const DOMAINS = [
-  { id: "stocks", label: "Stocks" },
   { id: "polymarket", label: "Polymarket" },
   { id: "geopolitics", label: "Geopolitics" },
   { id: "social", label: "Social" },
@@ -22,7 +22,6 @@ const DOMAINS = [
 ];
 
 const DOMAIN_EXAMPLES: Record<string, string> = {
-  stocks: "What public opinion trends would emerge if the Fed announced emergency rate cuts?",
   polymarket: "How would Polymarket odds shift if Trump announced 50% tariffs on the EU immediately?",
   geopolitics: "What happens to global supply chains and opinion if the Iranian regime falls by June 2026?",
   social: "How does the social media ecosystem react and spread information if Elon Musk buys Apple?",
@@ -925,6 +924,11 @@ function MirofishTerminalContent() {
             </tbody>
           </table>
           </div>
+        </div>
+
+        {/* TOP SIMULATIONS TODAY */}
+        <div style={{ maxWidth: 1200, margin: "60px auto 48px", borderTop: "1px solid #222", paddingTop: 40 }}>
+          <TopSimulationsSection />
         </div>
 
       </div>

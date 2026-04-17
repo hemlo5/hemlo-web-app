@@ -12,10 +12,8 @@ import {
 } from "lucide-react";
 
 const MODES = [
-  { icon: Home,      label: "Panel",      href: "/home",             active: true },
+  { icon: BarChart2, label: "Markets",    href: "/home",             active: true, iconUrl: "/polymarket.webp" },
   { icon: Cpu,       label: "Simulate",   href: "/simulate/mirofish",active: true, iconUrl: "/logo.svg" },
-  { icon: BarChart2, label: "Polymarket", href: "/polymarket",       active: true, iconUrl: "/polymarket.webp" },
-  { icon: TrendingUp,label: "Stocks",     href: "/stocks",           active: true },
   { icon: Newspaper, label: "Hot",        href: "/hot",              active: true },
   { icon: MapPin,    label: "Geo Map",    href: "/geo",              active: true },
 ];

@@ -43,7 +43,6 @@ export async function GET() {
   } catch {}
 
   const stats: MarketStats = {
-    nyseOpen: isNYSEOpen(),
     fearGreedValue,
     fearGreedLabel,
     cryptoMarketCap,

@@ -15,12 +15,8 @@ export async function GET(req: Request) {
   // Fire off all cache-warming requests in parallel without waiting (fire and forget)
   // or await them if we want to ensure Vercel doesn't kill the lambda
   try {
-    await Promise.all([
-      fetch(`${baseUrl}/api/stocks-prices`),
-      fetch(`${baseUrl}/api/stocks-news?symbol=BTC`),
-      fetch(`${baseUrl}/api/stocks-chart?symbol=BTC&range=1D`),
-    ])
-    return NextResponse.json({ status: "ok", message: "Warmed stocks cache" })
+    // No stock cache warming needed
+    return NextResponse.json({ status: "ok", message: "Trending cache refreshed" })
   } catch (e) {
     return NextResponse.json({ status: "error", error: String(e) }, { status: 500 })
   }

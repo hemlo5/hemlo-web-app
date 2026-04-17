@@ -54,15 +54,6 @@ const MODES = [
     bg: "linear-gradient(160deg,#050505, var(--accent-strong))",
   },
   {
-    icon: TrendingUp,
-    label: "Stock Simulator",
-    desc: "Simulate trader sentiment on any ticker.",
-    href: "#",
-    active: false,
-    color: "#22c55e",
-    bg: "linear-gradient(160deg,#003d1a,#22c55e)",
-  },
-  {
     icon: Globe2,
     label: "Geopolitics",
     desc: "Model reactions across nations and factions.",

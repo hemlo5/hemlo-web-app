@@ -10,37 +10,15 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { HemloIndexChart, genIndexData } from "@/components/hemlo-index-chart"
+import { ExploreMarkets } from "@/components/explore-markets"
 import { MarketSideRow, useSection } from "@/components/market-sidebar"
 import { WorldMap } from "@/components/world-map"
 import { useTrendingTopics } from "@/lib/useTrendingTopics"
-import type { TrendingTopic, Asset, AssetChartPoint, MarketStats } from "@/lib/types"
-import { TRACKED_ASSETS } from "@/lib/types"
+import type { TrendingTopic, MarketStats } from "@/lib/types"
 import { createChart, ColorType, AreaSeries } from "lightweight-charts"
 import { useRef } from "react"
 
-// ── MINI PRICE CHART ─────────────────────────────────────────────────────────
-function MiniPriceChart({ data, color }: { data: AssetChartPoint[]; color: string }) {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!ref.current || !data.length) return
-    ref.current.innerHTML = ""
-    const chart = createChart(ref.current, {
-      width: ref.current.clientWidth, height: 220,
-      layout: { background: { type: ColorType.Solid, color: "#000" }, textColor: "#888", fontFamily: "Inter", fontSize: 10 },
-      grid: { vertLines: { color: "#111" }, horzLines: { color: "#111" } },
-      rightPriceScale: { borderColor: "#333", scaleMargins: { top: 0.1, bottom: 0.1 } },
-      timeScale: { borderColor: "#333", timeVisible: true, secondsVisible: false },
-      crosshair: { mode: 0 },
-    })
-    const s = chart.addSeries(AreaSeries, { lineColor: color, topColor: `${color}40`, bottomColor: `${color}05`, lineWidth: 2 })
-    s.setData(data.map(pt => ({ time: Math.floor(pt.t / 1000), value: pt.p })))
-    chart.timeScale().fitContent()
-    const resize = () => { if (ref.current) chart.applyOptions({ width: ref.current.clientWidth }) }
-    window.addEventListener("resize", resize)
-    return () => { window.removeEventListener("resize", resize); chart.remove() }
-  }, [data, color])
-  return <div ref={ref} style={{ width: "100%", height: 220 }} />
-}
+// MINI PRICE CHART - REMOVED
 
 // ── STAT PILL ────────────────────────────────────────────────────────────────
 function StatPill({ label, value, color }: { label: string; value: string; color?: string }) {
@@ -153,7 +131,7 @@ function SimCard({ t, index }: { t: TrendingTopic; index: number }) {
 
 // ── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function HomePage() {
-  const [chartTab, setChartTab] = useState<"index" | "geo" | "stocks">("index")
+  const [chartTab, setChartTab] = useState<"index" | "geo">("index")
   const [sideTab, setSideTab] = useState<"staples" | "trending" | "breaking">("staples")
   const [simFilter, setSimFilter] = useState("all")
   const [simSort, setSimSort] = useState("divergence")
@@ -203,14 +181,7 @@ export default function HomePage() {
       .catch(() => {})
   }, [])
 
-  // Stocks mini data
-  const [selectedAsset, setSelectedAsset] = useState("BTC")
-  const [assets, setAssets] = useState<Asset[]>([])
-  const [miniChart, setMiniChart] = useState<AssetChartPoint[]>([])
-  useEffect(() => { fetch("/api/stocks-prices").then(r => r.json()).then(d => setAssets(d.assets ?? [])).catch(() => {}) }, [])
-  useEffect(() => {
-    fetch(`/api/stocks-chart?symbol=${selectedAsset}&range=1D`).then(r => r.json()).then(d => setMiniChart(d.chart ?? [])).catch(() => {})
-  }, [selectedAsset])
+  // BTC price from assets - REMOVED
 
   // HEMLO Index data
   const combined = [...staples.data, ...trending.data]
@@ -226,10 +197,7 @@ export default function HomePage() {
   const topDiv = combined.reduce((max, t) => Math.abs(t.divergence ?? 0) > Math.abs(max.divergence ?? 0) ? t : max, combined[0] ?? { topic: "—", divergence: 0 })
   const breakingCount = newsTopics.filter(t => t.urgency === "breaking").length
 
-  // BTC price from assets
-  const btc = assets.find(a => a.symbol === "BTC")
-  const btcStr = btc ? `$${btc.price.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${btc.changePct24h >= 0 ? "+" : ""}${btc.changePct24h.toFixed(1)}%` : "Loading..."
-  const btcColor = btc && btc.changePct24h >= 0 ? "#22c55e" : "#ef4444"
+  // BTC price logic - REMOVED
 
   // Simulation cards — filter & sort
   const simCandidates = simFilter === "mine" ? mySims : completedSims
@@ -258,9 +226,7 @@ export default function HomePage() {
     : newsTopics.filter(t => t.urgency === "breaking")
   const sideLoading = sideTab === "staples" ? staples.loading : sideTab === "trending" ? trending.loading : newsLoading
 
-  // Selected asset for stocks tab
-  const currentAsset = assets.find(a => a.symbol === selectedAsset)
-  const miniColor = currentAsset && currentAsset.changePct24h >= 0 ? "#22c55e" : "#ef4444"
+  // Selected asset for stocks tab - REMOVED
 
   return (
     <div style={{ background: "var(--bg-primary)", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
@@ -268,7 +234,6 @@ export default function HomePage() {
       {/* ── TOP BAR ── */}
       <div style={{ padding: "8px 24px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexShrink: 0, overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
         <div className="stat-pills-row">
-          <StatPill label="BTC" value={btcStr} color={btcColor} />
           {topDiv && <StatPill label="Top Div" value={`${topDiv.topic?.slice(0, 20)}… ${topDiv.divergence > 0 ? "+" : ""}${topDiv.divergence}%`} color={Math.abs(topDiv.divergence ?? 0) > 10 ? "var(--accent)" : undefined} />}
           <StatPill label="Breaking" value={`${breakingCount} events`} color={breakingCount > 0 ? "#ef4444" : undefined} />
           {stats && <StatPill label="Fear & Greed" value={`${stats.fearGreedValue} · ${stats.fearGreedLabel}`} color={stats.fearGreedValue > 60 ? "#22c55e" : stats.fearGreedValue < 40 ? "#ef4444" : "var(--accent)"} />}
@@ -438,60 +403,9 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* ── TOP SIMULATIONS ── */}
-      <div id="top-simulations" style={{ padding: "32px 24px", borderTop: "1px solid var(--border)" }}>
-        {/* Header - hidden on mobile */}
-        <div className="hide-mobile" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 800 }}>
-            Top Simulations Today
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            {/* Filter pills */}
-            {["all", "markets", "news", "mine"].map(f => (
-              <button key={f} onClick={() => setSimFilter(f)}
-                style={{
-                  padding: "5px 12px", borderRadius: 6, border: `1px solid ${simFilter === f ? "var(--accent)" : "var(--border)"}`,
-                  background: simFilter === f ? "rgba(102,244,255,0.1)" : "transparent",
-                  color: simFilter === f ? "var(--accent)" : "var(--text-muted)",
-                  fontSize: 10, fontWeight: 700, cursor: "pointer", textTransform: "capitalize",
-                }}
-              >{f}</button>
-            ))}
-            {/* Sort */}
-            <select value={simSort} onChange={e => setSimSort(e.target.value)}
-              style={{
-                padding: "5px 10px", borderRadius: 6, border: "1px solid var(--border)",
-                background: "#0a0a0a", color: "var(--text-muted)", fontSize: 10, fontWeight: 700, cursor: "pointer",
-              }}
-            >
-              <option value="divergence">Highest Divergence</option>
-              <option value="confidence">Highest Confidence</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Grid */}
-        {displayed.length > 0 ? (
-          <>
-            <div className="resp-grid-3">
-              {displayed.map((t, i) => <SimCard key={t.id ?? i} t={t} index={i} />)}
-            </div>
-            {sorted.length > 9 && !showMore && (
-              <div style={{ textAlign: "center", paddingTop: 20 }}>
-                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                  onClick={() => setShowMore(true)}
-                  style={{ padding: "10px 24px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "var(--accent)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-                >
-                  Load More Simulations
-                </motion.button>
-              </div>
-            )}
-          </>
-        ) : (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-muted)", fontSize: 13 }}>
-            {loadingSims ? "Loading completed simulations..." : "No fully simulated markets available today"}
-          </div>
-        )}
+      {/* ── EXPLORE ALL MARKETS ── */}
+      <div id="top-simulations" style={{ borderTop: "1px solid var(--border)" }}>
+        <ExploreMarkets />
       </div>
     </div>
   )

@@ -116,7 +116,7 @@ export default function StapleSimulationPage() {
   if (!sim) return (
     <div style={{ background: "#080c18", minHeight: "100vh", color: "#e5e5e5", padding: 60 }}>
       <h2 style={{ color: "#fff" }}>Simulation not found</h2>
-      <Link href="/polymarket" style={{ color: "var(--accent, #FF6B00)", textDecoration: "underline" }}>← Back to Markets</Link>
+      <Link href="/home" style={{ color: "var(--accent, #FF6B00)", textDecoration: "underline" }}>← Back to Markets</Link>
     </div>
   );
 
@@ -166,7 +166,7 @@ export default function StapleSimulationPage() {
 
       {/* ── HERO BAND ── */}
       <div style={{ background: "#000", borderBottom: "1px solid #1a1a1a", padding: "clamp(20px,5vw,32px) clamp(16px,6vw,60px) clamp(16px,4vw,28px)" }}>
-        <Link href="/polymarket" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#555", textDecoration: "none", fontSize: 12, marginBottom: 24, letterSpacing: 0.5 }}>
+        <Link href="/home" style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#555", textDecoration: "none", fontSize: 12, marginBottom: 24, letterSpacing: 0.5 }}>
           <ArrowLeft size={13} /> Back to Markets
         </Link>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "clamp(16px,4vw,40px)", flexWrap: "wrap" }}>
@@ -534,7 +534,7 @@ Agents_Deployed: ${agentsDeployed.toLocaleString()}`}
 
         {/* FOOTER ACTIONS */}
         <div style={{ display: "flex", gap: 10, alignItems: "center", paddingTop: 24, borderTop: "1px solid #1a1a1a", flexWrap: "wrap" }}>
-          <Link href="/polymarket" style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", border: "1px solid #1a1a1a", color: "#555", textDecoration: "none", fontSize: 11, fontWeight: 600, borderRadius: 6 }}>
+          <Link href="/home" style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", border: "1px solid #1a1a1a", color: "#555", textDecoration: "none", fontSize: 11, fontWeight: 600, borderRadius: 6 }}>
             <ArrowLeft size={13} /> Back to Markets
           </Link>
           <button onClick={() => router.push(`/simulate/mirofish?scenario=${encodeURIComponent(sim.topic)}&seedMode=auto`)}
