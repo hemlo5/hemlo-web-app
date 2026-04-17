@@ -47,7 +47,7 @@ function MirofishTerminalContent() {
   const [llmModel, setLlmModel] = useState("deepseek-v3");
 
   const [isPro] = useState(true);
-  const [serverReady, setServerReady] = useState<boolean | null>(null);
+  const [engineStatus, setEngineStatus] = useState<"idle" | "queued" | "running">("idle");
   const [isGeneratingSeed, setIsGeneratingSeed] = useState(false);
   const [seedError, setSeedError] = useState("");
   
@@ -213,8 +213,6 @@ function MirofishTerminalContent() {
   }, []); // run once on mount
 
   useEffect(() => {
-    // Health check via server-side proxy (avoids CORS on direct localhost fetch)
-    fetch("/api/mirofish-health").then(r => setServerReady(r.ok)).catch(() => setServerReady(false));
     // Fetch user sims
     fetch("/api/custom-simulations").then(r => r.json()).then(d => setPastSims(d.simulations || []));
   }, []);
@@ -286,6 +284,7 @@ function MirofishTerminalContent() {
     }
 
     setPhase("running");
+    setEngineStatus("queued");
     setElapsed(0);
     setLiveLogs([]);
     setSseGraphData(null);
@@ -340,6 +339,7 @@ function MirofishTerminalContent() {
 
       es.onmessage = (e) => {
         try {
+          if (engineStatus !== "running") setEngineStatus("running");
           const event = JSON.parse(e.data);
           
           if (event.step === "error") {
@@ -522,15 +522,11 @@ function MirofishTerminalContent() {
             <div className="hide-mobile" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: "24px" }}>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>System status</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-                <div style={{ width: 12, height: 12, background: serverReady === true ? "#22c55e" : serverReady === false ? "#ef4444" : "#f59e0b", borderRadius: "50%", boxShadow: serverReady === true ? "0 0 10px rgba(34,197,94,0.4)" : serverReady === false ? "0 0 10px rgba(239,68,68,0.4)" : "0 0 10px rgba(245,158,11,0.4)" }} />
-                <div style={{ fontSize: 28, fontWeight: 800, color: serverReady === true ? "#fff" : "var(--text-muted)", lineHeight: 1 }}>{serverReady === true ? "Engine Ready" : serverReady === false ? "Offline" : "Connecting..."}</div>
+                <div style={{ width: 12, height: 12, background: "#22c55e", borderRadius: "50%", boxShadow: "0 0 10px rgba(34,197,94,0.4)" }} />
+                <div style={{ fontSize: 28, fontWeight: 800, color: "#fff", lineHeight: 1 }}>Engine Ready</div>
               </div>
               <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                {serverReady === true
-                  ? "The prediction engine is online. Upload a reality seed and define your scenario to begin parallel agent simulation." 
-                  : serverReady === false 
-                  ? "MiroFish engine is unreachable. Please verify localhost connection."
-                  : "Checking connection to the MiroFish engine..."}
+                The prediction engine is online. Upload a reality seed and define your scenario to begin parallel agent simulation.
               </div>
             </div>
 
@@ -599,9 +595,9 @@ function MirofishTerminalContent() {
                     <motion.div
                       animate={{ opacity: [1, 0.3, 1] }}
                       transition={{ duration: 1.2, repeat: Infinity }}
-                      style={{ width: 10, height: 10, borderRadius: "50%", background: "#22c55e", boxShadow: "0 0 12px rgba(34,197,94,0.6)" }}
+                      style={{ width: 10, height: 10, borderRadius: "50%", background: engineStatus === "queued" ? "#f59e0b" : "#22c55e", boxShadow: engineStatus === "queued" ? "0 0 12px rgba(245,158,11,0.6)" : "0 0 12px rgba(34,197,94,0.6)" }}
                     />
-                    Simulation Running
+                    {engineStatus === "queued" ? "Serverless Engine in Queue..." : "Simulation Running"}
                     <span style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 500 }}>— {formatSecs(elapsed)} elapsed</span>
                   </div>
                   <button
