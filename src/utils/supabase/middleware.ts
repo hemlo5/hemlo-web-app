@@ -31,8 +31,13 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // Refresh session if expired
-  await supabase.auth.getUser()
+  // Refresh session if expired — suppress noisy token-not-found errors
+  // (expected after OAuth credential rotation; clears itself when users re-sign-in)
+  try {
+    await supabase.auth.getUser()
+  } catch {
+    // refresh_token_not_found — harmless, old cookies will expire naturally
+  }
 
   return supabaseResponse
 }
