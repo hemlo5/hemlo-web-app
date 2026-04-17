@@ -47,7 +47,7 @@ function MirofishTerminalContent() {
   const [llmModel, setLlmModel] = useState("deepseek-v3");
 
   const [isPro] = useState(true);
-  const [serverReady, setServerReady] = useState(false);
+  const [serverReady, setServerReady] = useState<boolean | null>(null);
   const [isGeneratingSeed, setIsGeneratingSeed] = useState(false);
   const [seedError, setSeedError] = useState("");
   
@@ -522,13 +522,15 @@ function MirofishTerminalContent() {
             <div className="hide-mobile" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: "24px" }}>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>System status</div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-                <div style={{ width: 12, height: 12, background: serverReady ? "#22c55e" : "#ef4444", borderRadius: "50%", boxShadow: serverReady ? "0 0 10px rgba(34,197,94,0.4)" : "0 0 10px rgba(239,68,68,0.4)" }} />
-                <div style={{ fontSize: 28, fontWeight: 800, color: serverReady ? "#fff" : "var(--text-muted)", lineHeight: 1 }}>{serverReady ? "Engine Ready" : "Offline"}</div>
+                <div style={{ width: 12, height: 12, background: serverReady === true ? "#22c55e" : serverReady === false ? "#ef4444" : "#f59e0b", borderRadius: "50%", boxShadow: serverReady === true ? "0 0 10px rgba(34,197,94,0.4)" : serverReady === false ? "0 0 10px rgba(239,68,68,0.4)" : "0 0 10px rgba(245,158,11,0.4)" }} />
+                <div style={{ fontSize: 28, fontWeight: 800, color: serverReady === true ? "#fff" : "var(--text-muted)", lineHeight: 1 }}>{serverReady === true ? "Engine Ready" : serverReady === false ? "Offline" : "Connecting..."}</div>
               </div>
               <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                {serverReady 
+                {serverReady === true
                   ? "The prediction engine is online. Upload a reality seed and define your scenario to begin parallel agent simulation." 
-                  : "MiroFish engine is unreachable. Please verify localhost connection."}
+                  : serverReady === false 
+                  ? "MiroFish engine is unreachable. Please verify localhost connection."
+                  : "Checking connection to the MiroFish engine..."}
               </div>
             </div>
 
