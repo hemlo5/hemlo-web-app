@@ -3,13 +3,12 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  Loader2, ArrowRight, Check, Lock,
-  DollarSign, BarChart2, MessageCircle, Brain
+  Loader2, ArrowRight, Check, Lock
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Suspense } from "react";
-import { AgentNetworkCanvas } from "@/components/agent-network-canvas";
+import { createClient } from "@/utils/supabase/client";
 import { MirofishGraphPanel } from "@/components/mirofish-graph-panel";
 import { TopSimulationsSection } from "@/components/top-simulations-section";
 
@@ -53,6 +52,11 @@ function MirofishTerminalContent() {
   const [engineStatus, setEngineStatus] = useState<"idle" | "queued" | "running">("idle");
   const [isGeneratingSeed, setIsGeneratingSeed] = useState(false);
   const [seedError, setSeedError] = useState("");
+
+  // ── Launch queue state: provides immediate feedback between button click and SSE start
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [launchStep, setLaunchStep] = useState<string>("Initializing...");
+  const [launchError, setLaunchError] = useState<string | null>(null);
   
   useEffect(() => {
     if (!searchParams) return;
@@ -280,12 +284,45 @@ function MirofishTerminalContent() {
   const startSimulation = async () => {
     if (!scenario) return;
 
-    // If auto mode is selected, generate seed FIRST before proceeding
-    if (seedMode === "auto") {
-      const genSuccess = await handleGenerateSeed(scenario);
-      if (!genSuccess) return; // abort start if seed generation fails
+    // ── Step 0: Immediately show the launch overlay so the user knows something is happening
+    setIsLaunching(true);
+    setLaunchError(null);
+    setLaunchStep("Verifying session...");
+
+    // ── Step 1: Auth guard — ensure we have a valid session before any API calls
+    try {
+      const supabase = createClient();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        // Attempt a silent refresh first before giving up
+        setLaunchStep("Refreshing session...");
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError || !refreshed.session) {
+          setLaunchError("Your session has expired. Please sign in again.");
+          setIsLaunching(false);
+          return;
+        }
+      }
+    } catch (authErr) {
+      console.error("[mirofish] auth check failed:", authErr);
+      setLaunchError("Authentication check failed. Please refresh the page.");
+      setIsLaunching(false);
+      return;
     }
 
+    // ── Step 2: Generate reality seed if auto mode
+    if (seedMode === "auto") {
+      setLaunchStep("Generating reality seed...");
+      const genSuccess = await handleGenerateSeed(scenario);
+      if (!genSuccess) {
+        setLaunchError(seedError || "Failed to generate reality seed. Please try again.");
+        setIsLaunching(false);
+        return;
+      }
+    }
+
+    // ── Step 3: Transition UI to running state
+    setLaunchStep("Creating simulation record...");
     setPhase("running");
     setEngineStatus("queued");
     setElapsed(0);
@@ -296,7 +333,7 @@ function MirofishTerminalContent() {
     graphEdgesAccRef.current = [];
     setSteps(steps.map(s => ({ ...s, status: "pending", time: "" })));
     
-    // Save placeholder to DB
+    // ── Step 4: Save placeholder to DB
     let simDbId: string | null = null;
     try {
       const dbRes = await fetch("/api/custom-simulations", {
@@ -304,13 +341,25 @@ function MirofishTerminalContent() {
         body: JSON.stringify({ scenario, domain, reality_seed: seedRef.current || seed || scenario, agent_count: agents, rounds, llm_model: llmModel, parallel_gen: parallelGen, platforms: ["twitter", "reddit"] })
       });
       const dbData = await dbRes.json();
+      if (dbRes.status === 401) {
+        setLaunchError("Session expired. Please sign in and try again.");
+        setIsLaunching(false);
+        setPhase("idle");
+        return;
+      }
       simDbId = dbData.simulation?.id || null;
       if (simDbId) setMiroProjectId(simDbId);
-    } catch {}
-    
+    } catch {
+      setLaunchError("Network error creating simulation. Please check your connection.");
+      setIsLaunching(false);
+      setPhase("idle");
+      return;
+    }
+
+    // ── Step 5: Connect to Modal engine via SSE
+    setLaunchStep("Connecting to engine...");
     timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
     const startT = Date.now();
-    const MIRO = "http://localhost:5001";
     const getT = () => formatSecs(Math.floor((Date.now() - startT)/1000));
 
     const markFailed = async (msg: string) => {
@@ -324,6 +373,7 @@ function MirofishTerminalContent() {
 
     if (!simDbId) {
       await markFailed("Could not create simulation in database");
+      setIsLaunching(false);
       return;
     }
 
@@ -341,6 +391,8 @@ function MirofishTerminalContent() {
       const es = new EventSource(url.toString());
 
       es.onmessage = (e) => {
+        // Dismiss the launch overlay on first SSE message
+        setIsLaunching(false);
         try {
           if (engineStatus !== "running") setEngineStatus("running");
           const event = JSON.parse(e.data);
@@ -353,11 +405,9 @@ function MirofishTerminalContent() {
 
           if (event.message) addLog(`  [modal] ${event.message}`);
 
-          // Map the Modal pipeline steps to the UI steps
           if (event.step === "init") updateStep(0, "active");
           if (event.step === "ontology" || event.step === "graph_build") updateStep(0, "active");
 
-          // graph_chunk: accumulate nodes/edges as they stream in
           if (event.step === "graph_chunk" && event.data?.type && event.data?.items) {
             if (event.data.type === "nodes") {
               graphNodesAccRef.current = [...graphNodesAccRef.current, ...event.data.items];
@@ -366,7 +416,6 @@ function MirofishTerminalContent() {
             }
           }
 
-          // graph_chunk_done: all chunks received — commit to state and render
           if (event.step === "graph_chunk_done" && event.status === "complete") {
             const nodes = graphNodesAccRef.current;
             const edges = graphEdgesAccRef.current;
@@ -411,12 +460,14 @@ function MirofishTerminalContent() {
         }
       };
 
-      es.onerror = (err) => {
+      es.onerror = () => {
+        setIsLaunching(false);
         es.close();
         markFailed("Connection to Modal engine lost.");
       };
 
     } catch (e: any) {
+      setIsLaunching(false);
       await markFailed(e?.message || String(e));
     }
   };
@@ -513,7 +564,164 @@ function MirofishTerminalContent() {
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", backgroundColor: "#000000", color: "#ffffff", display: "flex", flexDirection: "column" }}>
+
+      {/* ── LAUNCH OVERLAY: Full-screen animated queue state ─────────────────── */}
+      <AnimatePresence>
+        {isLaunching && (
+          <motion.div
+            key="launch-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            style={{
+              position: "fixed", inset: 0, zIndex: 9999,
+              background: "rgba(0,0,0,0.92)", backdropFilter: "blur(24px)",
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              gap: 32,
+            }}
+          >
+            {launchError ? (
+              /* Error state */
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 20 }}
+              >
+                <div style={{
+                  width: 64, height: 64, borderRadius: "50%",
+                  background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 28,
+                }}>✕</div>
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: "#fff", marginBottom: 8 }}>Launch Failed</div>
+                  <div style={{ fontSize: 13, color: "#999", maxWidth: 320 }}>{launchError}</div>
+                </div>
+                <button
+                  onClick={() => { setIsLaunching(false); setLaunchError(null); }}
+                  style={{
+                    padding: "10px 28px", borderRadius: 10, background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.15)", color: "#fff", fontSize: 13,
+                    fontWeight: 700, cursor: "pointer",
+                  }}
+                >
+                  Dismiss & Retry
+                </button>
+              </motion.div>
+            ) : (
+              /* Queue animation state */
+              <>
+                {/* Pulsing orb */}
+                <div style={{ position: "relative", width: 96, height: 96 }}>
+                  {[0, 1, 2].map(i => (
+                    <motion.div
+                      key={i}
+                      animate={{ scale: [1, 1.6 + i * 0.3, 1], opacity: [0.4, 0, 0.4] }}
+                      transition={{ duration: 2, delay: i * 0.4, repeat: Infinity, ease: "easeOut" }}
+                      style={{
+                        position: "absolute", inset: 0, borderRadius: "50%",
+                        border: "1px solid rgba(255,255,255,0.25)",
+                      }}
+                    />
+                  ))}
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                    style={{
+                      position: "absolute", inset: 8, borderRadius: "50%",
+                      border: "2px solid transparent",
+                      borderTopColor: "rgba(255,255,255,0.8)",
+                      borderRightColor: "rgba(255,255,255,0.3)",
+                    }}
+                  />
+                  <div style={{
+                    position: "absolute", inset: 0, display: "flex",
+                    alignItems: "center", justifyContent: "center",
+                  }}>
+                    <motion.div
+                      animate={{ scale: [1, 1.1, 1] }}
+                      transition={{ duration: 1.5, repeat: Infinity }}
+                      style={{
+                        width: 40, height: 40, borderRadius: "50%",
+                        background: "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05))",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ textAlign: "center" }}>
+                  <div style={{
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.4)",
+                    letterSpacing: 3, textTransform: "uppercase", marginBottom: 10,
+                  }}>
+                    Mirofish Engine
+                  </div>
+                  <motion.div
+                    key={launchStep}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                    style={{ fontSize: 20, fontWeight: 700, color: "#fff" }}
+                  >
+                    {launchStep}
+                  </motion.div>
+                </div>
+
+                {/* Step dots */}
+                <div style={{ display: "flex", gap: 8 }}>
+                  {["Verifying session", "Generating seed", "Creating record", "Connecting"].map((s, i) => {
+                    const stepLabels: Record<string, number> = {
+                      "Verifying session...": 0,
+                      "Refreshing session...": 0,
+                      "Generating reality seed...": 1,
+                      "Creating simulation record...": 2,
+                      "Connecting to engine...": 3,
+                      "Initializing...": 0,
+                    };
+                    const current = stepLabels[launchStep] ?? 0;
+                    const isDone = i < current;
+                    const isNow = i === current;
+                    return (
+                      <motion.div
+                        key={s}
+                        animate={isNow ? { scale: [1, 1.3, 1] } : {}}
+                        transition={{ duration: 0.8, repeat: Infinity }}
+                        style={{
+                          width: isNow ? 24 : 8, height: 8,
+                          borderRadius: 4,
+                          background: isDone
+                            ? "rgba(255,255,255,0.8)"
+                            : isNow
+                            ? "rgba(255,255,255,0.9)"
+                            : "rgba(255,255,255,0.15)",
+                          transition: "width 0.3s, background 0.3s",
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => { setIsLaunching(false); setPhase("idle"); }}
+                  style={{
+                    position: "absolute", bottom: 32,
+                    background: "transparent", border: "none",
+                    color: "rgba(255,255,255,0.3)", fontSize: 12, cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column" }}>
+
         {phase === "idle" ? (
           <>
             {/* Mirofish White Setup Zone */}

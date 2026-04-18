@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"next dev -p 8080\" \"python -u ../gem.py\"",
+    "dev": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev -p 8080",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -43,6 +43,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.0",
     "tailwindcss": "^4",
