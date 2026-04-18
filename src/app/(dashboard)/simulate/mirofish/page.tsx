@@ -38,12 +38,16 @@ function MirofishTerminalContent() {
   const [scenario, setScenario] = useState("");
   const [seed, setSeed] = useState("");
   const seedRef = useRef(""); // keep ref in sync so startSimulation always reads latest
-  const [seedMode, setSeedMode] = useState<"write" | "upload" | "auto">("write");
+  const [seedMode, setSeedMode] = useState<"write" | "upload" | "auto">("auto");
   const [depthLevel, setDepthLevel] = useState<"standard" | "deep" | "super">("standard");
   const [agents, setAgents] = useState(25);
   const [rounds, setRounds] = useState(6);
   const [parallelGen, setParallelGen] = useState(3);
   const [llmModel, setLlmModel] = useState("deepseek-v3");
+
+  const [subStep, setSubStep] = useState<"prompt" | "seed" | "params">("prompt");
+  const [depthMode, setDepthMode] = useState<"standard" | "super" | "deep" | "custom">("standard");
+  const [standardUses, setStandardUses] = useState(0); // For free tier limit demo
 
   const [isPro] = useState(true);
   const [engineStatus, setEngineStatus] = useState<"idle" | "queued" | "running">("idle");
@@ -506,431 +510,331 @@ function MirofishTerminalContent() {
 
   const btnReady = !!scenario && (seedMode === "auto" || seed || scenario) && !isGeneratingSeed;
 
+
   return (
-    <div style={{ backgroundColor: "var(--bg-primary)", minHeight: "100vh", fontFamily: "'Space Grotesk', sans-serif", color: "var(--text-primary)", overflowY: "auto", display: "flex", flexDirection: "column" }}>
-      
-      <div style={{ padding: "clamp(24px, 5vw, 60px) clamp(16px, 4vw, 40px)", flex: 1, position: "relative" }}>
-        
-        {/* TOP SPLIT */}
-        <div className="poly-layout" style={{ display: "grid", gridTemplateColumns: "38% 1fr", gap: "clamp(20px, 4vw, 40px)", maxWidth: 1200, margin: "0 auto" }}>
-          
-          {/* LEFT PANEL */}
-          <div className="hide-mobile" style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-            
-            {/* System Status */}
-            <div className="hide-mobile" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: "24px" }}>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>System status</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-                <div style={{ width: 12, height: 12, background: "#22c55e", borderRadius: "50%", boxShadow: "0 0 10px rgba(34,197,94,0.4)" }} />
-                <div style={{ fontSize: 28, fontWeight: 800, color: "#fff", lineHeight: 1 }}>Engine Ready</div>
-              </div>
-              <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                The prediction engine is online. Upload a reality seed and define your scenario to begin parallel agent simulation.
-              </div>
-            </div>
-
-            {/* Stats Block */}
-            <div className="resp-grid-2 hide-mobile" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "clamp(12px, 3vw, 20px)" }}>
-              <div>
-                <div style={{ color: "#fff", fontWeight: "bold", fontSize: 14, marginBottom: 4 }}>low cost</div>
-                <div style={{ fontSize: 11, color: "#888", lineHeight: 1.4 }}>Each simulation<br/>costs ~$0.10-0.50</div>
-              </div>
-              <div>
-                <div style={{ color: "#fff", fontWeight: "bold", fontSize: 14, marginBottom: 4 }}>High Availability</div>
-                <div style={{ fontSize: 11, color: "#888", lineHeight: 1.4 }}>Up to 1,000,000<br/>agents simulated</div>
-              </div>
-              <div>
-                <div style={{ color: "#fff", fontWeight: "bold", fontSize: 14, marginBottom: 4 }}>Fast</div>
-                <div style={{ fontSize: 11, color: "#888", lineHeight: 1.4 }}>25 agents runs<br/>in ~28 seconds</div>
-              </div>
-              <div>
-                <div style={{ color: "#fff", fontWeight: "bold", fontSize: 14, marginBottom: 4 }}>Accurate</div>
-                <div style={{ fontSize: 11, color: "#888", lineHeight: 1.4 }}>87% avg confidence<br/>across all sims</div>
-              </div>
-            </div>
-
-            {/* Workflow Sequence (Desktop only) */}
-            <div className="hide-mobile" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: "24px" }}>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 20, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Workflow pipeline</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                {steps.map((s, i) => {
-                  const isActive = phase === "running" && activeStep === i;
-                  const isDone = s.status === "done";
-                  
-                  return (
-                  <div key={i} style={{ display: "flex", gap: 16 }}>
-                    <div style={{ fontSize: 16, color: isActive ? "var(--text-primary)" : "var(--text-muted)", fontWeight: 800 }}>
-                      0{i+1}
-                    </div>
-                    <div>
-                      <div style={{ color: isActive ? "var(--accent)" : isDone ? "var(--text-primary)" : "var(--text-muted)", fontWeight: 800, fontSize: 14, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
-                        {s.label}
-                        {isActive && <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader2 size={14} color="var(--accent)" /></motion.div>}
-                        {isDone && <Check size={14} color="#22c55e" />}
-                        {s.time && <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto", fontWeight: 600 }}>{s.time}</span>}
+    <div style={{ position: "relative", minHeight: "100vh", backgroundColor: "#000000", color: "#ffffff", display: "flex", flexDirection: "column" }}>
+      <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column" }}>
+        {phase === "idle" ? (
+          <>
+            {/* Mirofish White Setup Zone */}
+            <div style={{ width: "100%", backgroundColor: "#ffffff", padding: "60px 20px", borderBottom: "1px solid #eaeaea" }}>
+              <div style={{ maxWidth: 800, margin: "0 auto" }}>
+                <AnimatePresence mode="wait">
+                  {subStep === "prompt" && (
+                    <motion.div
+                      key="prompt"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 20 }}
+                      style={{ display: "flex", flexDirection: "column", alignItems: "center" }}
+                    >
+                      <div style={{ 
+                        fontFamily: "'Space Grotesk', sans-serif",
+                        fontSize: "36px", fontWeight: 900, color: "#000000", marginBottom: "40px",
+                        textAlign: "center", letterSpacing: "-1px"
+                      }}>
+                        What are you thinking about today?
                       </div>
-                      <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, fontWeight: 500 }}>
-                        {s.sub}
+                      <div style={{ 
+                        width: "100%", background: "rgba(10,10,10,0.85)", backdropFilter: "blur(18px)", border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: "24px", padding: "18px 24px",
+                        boxShadow: "0 40px 100px rgba(0,0,0,0.2)", display: "flex", flexDirection: "column", gap: "16px"
+                      }}>
+                        <textarea
+                          value={scenario}
+                          onChange={(e) => setScenario(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); setSubStep("seed"); } }}
+                          placeholder="Tell us what you'd like to simulate..."
+                          style={{ 
+                            width: "100%", background: "transparent", border: "none", color: "#ffffff", 
+                            fontSize: "18px", fontWeight: 500, outline: "none", resize: "none", height: "60px", 
+                            lineHeight: "22px" 
+                          }}
+                        />
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ display: "flex", gap: "10px" }}>
+                            <button style={{ padding: "0 18px", height: 36, borderRadius: "18px", background: "rgba(10,10,10,0.85)", border: "1px solid rgba(255,255,255,0.05)", color: "#fff", fontSize: "14px", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", backdropFilter: "blur(12px)", transition: "all 0.2s" }}>
+                               Auto-detect
+                            </button>
+                          </div>
+                          <button 
+                            disabled={!scenario}
+                            onClick={() => setSubStep("seed")} 
+                            style={{ 
+                              width: 36, height: 36, borderRadius: "50%", background: scenario ? "#000" : "#ccc", border: "none", color: "#fff", 
+                              display: "flex", alignItems: "center", justifyContent: "center", cursor: scenario ? "pointer" : "not-allowed", transition: "all 0.2s" 
+                            }}
+                          >
+                            <ArrowRight size={18} />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                )})}
+                    </motion.div>
+                  )}
+
+                  {subStep === "seed" && (
+                    <motion.div
+                      key="seed"
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      style={{ display: "flex", flexDirection: "column" }}
+                    >
+                      <button onClick={() => setSubStep("prompt")} style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                        ← BACK TO PROMPT
+                      </button>
+                      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "28px", fontWeight: 900, color: "#000000", marginBottom: 8 }}>
+                        Reality Seed
+                      </div>
+                      <div style={{ fontSize: 14, color: "#666", marginBottom: 32 }}>
+                        Provide context or data for the simulation to ground itself in.
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
+                        {[
+                          { id: "auto", label: "Autogenerate", desc: "AI builds a seed from your prompt" },
+                          { id: "write", label: "Write Manually", desc: "Input your own context text" },
+                          { id: "upload", label: "Upload File", desc: "PDF, TXT or CSV contextual data" },
+                        ].map(opt => (
+                          <button
+                            key={opt.id}
+                            onClick={() => setSeedMode(opt.id as any)}
+                            style={{
+                              padding: 20, borderRadius: 16, border: `2px solid ${seedMode === opt.id ? "#000" : "#eee"}`,
+                              background: seedMode === opt.id ? "#fff" : "transparent", textAlign: "left", cursor: "pointer", transition: "all 0.2s"
+                            }}
+                          >
+                            <div style={{ fontSize: 14, fontWeight: 800, color: "#000", marginBottom: 4 }}>{opt.label}</div>
+                            <div style={{ fontSize: 11, color: "#888", lineHeight: 1.4 }}>{opt.desc}</div>
+                          </button>
+                        ))}
+                      </div>
+
+                      {seedMode === "write" && (
+                        <textarea
+                          value={seed}
+                          onChange={(e) => { setSeed(e.target.value); seedRef.current = e.target.value; }}
+                          placeholder="Paste your context here..."
+                          style={{ width: "100%", height: 120, background: "#f5f5f7", border: "1px solid #e5e5e7", borderRadius: 12, padding: 16, fontSize: 14, outline: "none", marginBottom: 24 }}
+                        />
+                      )}
+
+                      <button
+                        onClick={() => setSubStep("params")}
+                        style={{
+                          width: "100%", padding: "16px", background: "#000", color: "#fff", borderRadius: 12, fontWeight: 800, fontSize: 14, cursor: "pointer", border: "none"
+                        }}
+                      >
+                        CONTINUE TO PARAMETERS
+                      </button>
+                    </motion.div>
+                  )}
+
+                  {subStep === "params" && (
+                    <motion.div
+                      key="params"
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      style={{ display: "flex", flexDirection: "column" }}
+                    >
+                      <button onClick={() => setSubStep("seed")} style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                        ← BACK TO SEED
+                      </button>
+                      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "28px", fontWeight: 900, color: "#000000", marginBottom: 32 }}>
+                        Simulation Parameters
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 32 }}>
+                        {[
+                          { id: "standard", label: "Standard", desc: `25 Agents · 6 Rounds ${!isPro ? `(Remaining: ${2 - standardUses}/2)` : ""}`, agents: 25, rounds: 6, pro: false },
+                          { id: "super", label: "Super", desc: "100 Agents · 10 Rounds", agents: 100, rounds: 10, pro: true },
+                          { id: "deep", label: "Deep", desc: "250 Agents · 15 Rounds", agents: 250, rounds: 15, pro: true },
+                          { id: "custom", label: "Custom", desc: "Manually adjust every detail", agents: 50, rounds: 8, pro: false },
+                        ].map(opt => {
+                          const locked = opt.pro && !isPro;
+                          return (
+                            <button
+                              key={opt.id}
+                              disabled={locked}
+                              onClick={() => {
+                                setDepthMode(opt.id as any);
+                                if (opt.id !== "custom") {
+                                  setAgents(opt.agents);
+                                  setRounds(opt.rounds);
+                                }
+                              }}
+                              style={{
+                                padding: "16px", borderRadius: 16, 
+                                border: `2px solid ${depthMode === opt.id ? "#000" : "#eee"}`,
+                                background: depthMode === opt.id ? "#fff" : "transparent", 
+                                textAlign: "left", cursor: locked ? "not-allowed" : "pointer", 
+                                transition: "all 0.2s", opacity: locked ? 0.5 : 1,
+                                position: "relative"
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                <div style={{ fontSize: 13, fontWeight: 900, color: "#000" }}>{opt.label} Mode</div>
+                                {locked && <Lock size={12} color="#888" />}
+                              </div>
+                              <div style={{ fontSize: 10, color: "#888", fontWeight: 600 }}>{opt.desc}</div>
+                              {depthMode === opt.id && <div style={{ position: "absolute", top: 12, right: 12, width: 6, height: 6, borderRadius: "50%", background: "#000" }} />}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {depthMode === "custom" && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }} 
+                          animate={{ opacity: 1, y: 0 }}
+                          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32, marginBottom: 32, background: "#f8f8f9", padding: 20, borderRadius: 16 }}
+                        >
+                          <div>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+                              <span style={{ fontSize: 10, fontWeight: 800, color: "#666" }}>AGENTS COUNT</span>
+                              <span style={{ fontSize: 10, fontWeight: 900, color: "#000" }}>{agents}</span>
+                            </div>
+                            <input type="range" min="10" max="250" step="10" value={agents} onChange={(e) => setAgents(parseInt(e.target.value))} style={{ width: "100%", accentColor: "#000" }} />
+                          </div>
+                          <div>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+                              <span style={{ fontSize: 10, fontWeight: 800, color: "#666" }}>SIMULATION ROUNDS</span>
+                              <span style={{ fontSize: 10, fontWeight: 900, color: "#000" }}>{rounds}</span>
+                            </div>
+                            <input type="range" min="2" max="15" step="1" value={rounds} onChange={(e) => setRounds(parseInt(e.target.value))} style={{ width: "100%", accentColor: "#000" }} />
+                          </div>
+                        </motion.div>
+                      )}
+
+
+                      <button
+                        onClick={() => {
+                          if (!isPro && depthMode === "standard" && standardUses >= 2) {
+                            alert("You have reached the 2-use limit for Standard mode. Please upgrade to Pro!");
+                            return;
+                          }
+                          if (!isPro && depthMode === "standard") setStandardUses(prev => prev + 1);
+                          startSimulation();
+                        }}
+                        style={{
+                          width: "100%", padding: "18px", background: "#000", color: "#fff", borderRadius: 12, fontWeight: 950, fontSize: 16, cursor: "pointer", border: "none", boxShadow: "0 10px 40px rgba(0,0,0,0.1)", letterSpacing: 1.5
+                        }}
+                      >
+                        LAUNCH SIMULATION
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
 
-          </div>
-
-
-          {/* RIGHT PANEL */}
-          <div className="miro-right" style={{ display: "flex", flexDirection: "column", gap: 40 }}>
-            
-            {phase === "running" ? (
+            <div style={{ maxWidth: 1200, width: "100%", margin: "0 auto", padding: "60px 20px" }}>
+              <div style={{ borderTop: "1px solid #222222", paddingTop: 40 }}>
+                <TopSimulationsSection />
+              </div>
+            </div>
+          </>
+        ) : (
+          <div style={{ padding: "clamp(20px, 5vw, 40px)", flex: 1, backgroundColor: "#000000" }}>
+            <div style={{ maxWidth: 1400, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 340px", gap: 32 }}>
               
+              {/* Main Column: Graph & Logs */}
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-
-                {/* ── Running Header ── */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", display: "flex", alignItems: "center", gap: 12 }}>
                     <motion.div
                       animate={{ opacity: [1, 0.3, 1] }}
                       transition={{ duration: 1.2, repeat: Infinity }}
-                      style={{ width: 10, height: 10, borderRadius: "50%", background: engineStatus === "queued" ? "#f59e0b" : "#22c55e", boxShadow: engineStatus === "queued" ? "0 0 12px rgba(245,158,11,0.6)" : "0 0 12px rgba(34,197,94,0.6)" }}
+                      style={{ width: 10, height: 10, borderRadius: "50%", background: engineStatus === "queued" ? "#f59e0b" : "#22c55e" }}
                     />
-                    {engineStatus === "queued" ? "Serverless Engine in Queue..." : "Simulation Running"}
-                    <span style={{ fontSize: 14, color: "var(--text-muted)", fontWeight: 500 }}>— {formatSecs(elapsed)} elapsed</span>
+                    {engineStatus === "queued" ? "Engine in Queue..." : "Simulation Running"}
+                    <span style={{ fontSize: 14, color: "#aaa", fontWeight: 500 }}>— {formatSecs(elapsed)}</span>
                   </div>
-                  <button
-                    onClick={() => { sessionStorage.removeItem(SESSION_KEY); window.location.reload(); }}
-                    style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--text-muted)", padding: "8px 20px", cursor: "pointer", fontSize: 13, fontWeight: 600, borderRadius: 8 }}
-                  >
+                  <button onClick={() => { sessionStorage.removeItem('hemlo_running_sim'); window.location.reload(); }} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "#ccc", padding: "8px 20px", cursor: "pointer", fontSize: 13, fontWeight: 600, borderRadius: 8 }}>
                     Cancel
                   </button>
                 </div>
 
-                {/* ── Real MiroFish Graph RAG Visualization ── */}
-                <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden" }}>
-                  <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ fontWeight: 800, fontSize: 15, color: "var(--text-primary)" }}>Knowledge Graph — RAG Build</div>
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>Live stream from Production Engine</div>
-                  </div>
-                  <MirofishGraphPanel projectId={miroProjectId} isSimulating={true} liveData={sseGraphData} liveEvent={liveGraphEvent} />
+                {/* Big Graph Card */}
+                <div style={{ background: "rgba(10,10,10,0.8)", border: "1px solid #222", borderRadius: 24, padding: 24, minHeight: 480, display: "flex", flexDirection: "column" }}>
+                   <MirofishGraphPanel projectId={miroProjectId} isSimulating={true} liveData={sseGraphData} liveEvent={liveGraphEvent} />
                 </div>
 
-                {/* ── Live Engine Log ── */}
-                <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: "20px" }}>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1, fontWeight: 700, marginBottom: 16 }}>Live Engine Output</div>
-                  <div style={{ background: "#020408", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 10, height: 200, overflowY: "auto", padding: "14px 18px", fontFamily: "'Fira Code', 'Courier New', monospace", fontSize: 12 }}>
-                    {liveLogs.length === 0 && (
-                      <div style={{ color: "rgba(255,255,255,0.2)" }}>Waiting for engine response...</div>
-                    )}
+                {/* Logs Section */}
+                <div style={{ background: "#0c0c0c", border: "1px solid #1a1a1a", borderRadius: 16, padding: "20px" }}>
+                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 800, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#444" }} />
+                    Live Output Stream
+                  </div>
+                  <div style={{ height: 200, overflowY: "auto", fontFamily: "'Fira Code', monospace", fontSize: 12, scrollbarWidth: "none" }}>
+                    {liveLogs.length === 0 && <div style={{ color: "rgba(255,255,255,0.1)" }}>Waiting for pipeline signals...</div>}
                     {liveLogs.map((log, i) => (
-                      <div key={i} style={{
-                        color: log.includes("✓") ? "#22c55e"
-                          : log.includes("✗") || log.includes("FAILED") ? "#ef4444"
-                          : log.includes("→") ? "var(--text-primary)"
-                          : "rgba(255,255,255,0.45)",
-                        lineHeight: 1.8,
-                        whiteSpace: "pre-wrap",
-                        wordBreak: "break-all"
-                      }}>
+                      <div key={i} style={{ color: log.includes("✓") ? "#22c55e" : log.includes("✗") ? "#ef4444" : "#888", marginBottom: 6, lineHeight: 1.5 }}>
                         {log}
                       </div>
                     ))}
                     <div ref={logsEndRef} />
                   </div>
                 </div>
+              </div>
 
-                {/* Workflow Sequence moved here so it only shows when deployed and at the bottom */}
-                <div className="mobile-only" style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: "24px" }}>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 20, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Workflow pipeline</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              {/* Sidebar: Workflow Pipeline */}
+              <div style={{ position: "sticky", top: 40, height: "fit-content" }}>
+                 <div style={{ fontSize: 11, color: "#666", textTransform: "uppercase", letterSpacing: 2, fontWeight: 900, marginBottom: 32 }}>
+                    Workflow Pipeline
+                 </div>
+                 
+                 <div style={{ display: "flex", flexDirection: "column", gap: 0, position: "relative" }}>
+                    <div style={{ position: "absolute", left: 15, top: 0, bottom: 0, width: 1, background: "#1a1a1a", zIndex: 0 }} />
+                    
                     {steps.map((s, i) => {
-                      const isActive = phase === "running" && activeStep === i;
+                      const isActive = activeStep === i;
                       const isDone = s.status === "done";
-                      
                       return (
-                      <div key={i} style={{ display: "flex", gap: 16 }}>
-                        <div style={{ fontSize: 16, color: isActive ? "var(--text-primary)" : "var(--text-muted)", fontWeight: 800 }}>
-                          0{i+1}
+                        <div key={i} style={{ display: "flex", gap: 20, marginBottom: 32, position: "relative", zIndex: 1 }}>
+                           <div style={{ 
+                             width: 32, height: 32, borderRadius: "50%", 
+                             background: isDone ? "#22c55e" : isActive ? "#fff" : "#000",
+                             border: `1px solid ${isDone ? "#22c55e" : isActive ? "#fff" : "#222"}`,
+                             display: "flex", alignItems: "center", justifyContent: "center",
+                             fontSize: 10, fontWeight: 900, color: isDone || isActive ? "#000" : "#444",
+                             transition: "all 0.3s"
+                           }}>
+                              {isDone ? "✓" : `0${i+1}`}
+                           </div>
+                           <div style={{ flex: 1, paddingTop: 6 }}>
+                              <div style={{ fontSize: 13, fontWeight: 800, color: isDone || isActive ? "#fff" : "#444", marginBottom: 4 }}>
+                                {s.label}
+                              </div>
+                              <div style={{ fontSize: 11, color: isDone || isActive ? "#888" : "#222", lineHeight: 1.4 }}>
+                                {s.sub}
+                              </div>
+                              {isDone && s.time && (
+                                <div style={{ fontSize: 9, color: "#22c55e", fontWeight: 700, marginTop: 4 }}>
+                                   Completed in {s.time}
+                                </div>
+                              )}
+                           </div>
                         </div>
-                        <div>
-                          <div style={{ color: isActive ? "var(--accent)" : isDone ? "var(--text-primary)" : "var(--text-muted)", fontWeight: 800, fontSize: 14, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
-                            {s.label}
-                            {isActive && <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader2 size={14} color="var(--accent)" /></motion.div>}
-                            {isDone && <Check size={14} color="#22c55e" />}
-                            {s.time && <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto", fontWeight: 600 }}>{s.time}</span>}
-                          </div>
-                          <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, fontWeight: 500 }}>
-                            {s.sub}
-                          </div>
-                        </div>
-                      </div>
-                    )})}
-                  </div>
-                </div>
+                      )
+                    })}
+                 </div>
 
+                 <div style={{ marginTop: 40, padding: 20, background: "linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%)", borderRadius: 16, border: "1px solid #222" }}>
+                    <div style={{ fontSize: 10, color: "#555", fontWeight: 800, marginBottom: 8 }}>ENGINE ESTIMATE</div>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", fontFamily: "'Space Grotesk', sans-serif" }}>
+                       {estMins}m {estSecs}s
+                    </div>
+                    <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>
+                       Allocating {agents} agents across 2 nodes
+                    </div>
+                 </div>
               </div>
 
-            ) : (
-
-              <>
-              {/* 01 Reality Seed */}
-              <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: "24px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20, alignItems: "center" }}>
-                  <div style={{ color: "var(--text-primary)", fontWeight: 800, fontSize: 18 }}>01. Reality Seed</div>
-                  <div style={{ color: "var(--text-muted)", fontSize: 13, fontWeight: 500 }}>Context document for the simulation</div>
-                </div>
-
-                {/* Mode selector — big buttons */}
-                <div className="resp-grid-3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
-                  {[
-                    { id: "write" as const, label: "Write it", sub: "Type or paste context" },
-                    { id: "upload" as const, label: "Upload file", sub: "PDF, MD, TXT" },
-                    { id: "auto" as const, label: "Auto-generate", sub: "Generate from prompt" },
-                  ].map(m => (
-                    <button
-                      key={m.id}
-                      onClick={() => { setSeedMode(m.id); setSeed(""); }}
-                      style={{
-                        padding: "16px 14px",
-                        background: seedMode === m.id ? "rgba(255,107,0,0.08)" : "transparent",
-                        border: `1px solid ${seedMode === m.id ? "var(--accent)" : "var(--border)"}`,
-                        color: seedMode === m.id ? "var(--text-primary)" : "var(--text-muted)",
-                        cursor: "pointer",
-                        borderRadius: 12,
-                        textAlign: "left" as const,
-                        transition: "all 0.15s",
-                      }}
-                    >
-                      <div style={{ fontSize: 13, fontWeight: "bold", marginBottom: 4 }}>{m.label}</div>
-                      <div style={{ fontSize: 10, color: seedMode === m.id ? "#aaa" : "#555" }}>{m.sub}</div>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Write mode */}
-                {seedMode === "write" && (
-                  <textarea
-                    value={seed}
-                    onChange={(e) => { seedRef.current = e.target.value; setSeed(e.target.value); }}
-                    placeholder={`Paste or write your reality seed here...\nDescribe key actors, events, context, and relationships.\nThe more detail you provide, the better the intelligence will be.`}
-                    style={{ width: "100%", height: 180, background: "#050810", border: "1px solid var(--border)", borderRadius: 12, color: "var(--text-primary)", padding: 20, fontSize: 14, outline: "none", resize: "vertical", lineHeight: 1.6, boxSizing: "border-box" }}
-                  />
-                )}
-
-                {/* Upload mode */}
-                {seedMode === "upload" && (
-                  <div
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const file = e.dataTransfer.files[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = (ev) => setSeed(ev.target?.result as string || "");
-                      reader.readAsText(file);
-                    }}
-                    onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".pdf,.md,.txt"; i.onchange = (e: any) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = (ev) => setSeed(ev.target?.result as string || ""); r.readAsText(f); }; i.click(); }}
-                    style={{ border: "1px dashed #444", padding: "48px 32px", textAlign: "center", background: "#111", cursor: "pointer" }}
-                  >
-                    <div style={{ fontSize: 28, color: "#444", marginBottom: 12 }}>↑</div>
-                    <div style={{ color: "#aaa", fontSize: 14, marginBottom: 6 }}>Drag and drop a file</div>
-                    <div style={{ color: "#666", fontSize: 12 }}>or click to browse — PDF, MD, TXT</div>
-                    {seed && <div style={{ marginTop: 16, fontSize: 12, color: "#cccccc" }}>✓ File loaded ({seed.length} chars)</div>}
-                  </div>
-                )}
-
-                {/* Auto-generate mode */}
-                {seedMode === "auto" && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div style={{ fontSize: 12, color: "#888" }}>Generates a detailed context document from your scenario prompt using Gemini Flash.</div>
-                    <button
-                      onClick={() => handleGenerateSeed()}
-                      disabled={isGeneratingSeed || !scenario.trim()}
-                      style={{ padding: "16px", background: isGeneratingSeed ? "var(--bg-card)" : "var(--accent)", border: "none", borderRadius: 12, color: isGeneratingSeed ? "var(--text-muted)" : "#000", cursor: isGeneratingSeed || !scenario.trim() ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-                    >
-                      {isGeneratingSeed ? (<><motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader2 size={16} /></motion.div> Generating Seed...</>) : "Generate seed from scenario prompt"}
-                    </button>
-                    {!scenario.trim() && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Fill in the scenario prompt below first.</div>}
-                    {seed && (
-                      <div style={{ border: "1px solid var(--border)", padding: 20, borderRadius: 12, background: "#050810", position: "relative" }}>
-                        <div style={{ position: "absolute", top: 12, right: 16, fontSize: 12, color: "var(--text-muted)", cursor: "pointer", fontWeight: 700 }} onClick={() => setSeed("")}>Clear</div>
-                        <textarea value={seed} onChange={(e) => { seedRef.current = e.target.value; setSeed(e.target.value); }} style={{ width: "100%", height: 120, background: "transparent", border: "none", color: "var(--text-secondary)", fontSize: 13, resize: "vertical", outline: "none", boxSizing: "border-box", lineHeight: 1.5 }} />
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* 02 Parameters */}
-              <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: "24px" }}>
-                <div style={{ color: "var(--text-primary)", fontWeight: 800, fontSize: 18, marginBottom: 20 }}>02. Simulation Parameters</div>
-                
-                <div className="resp-grid-3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-                  {[
-                    { id: "standard" as const, label: "Standard", desc: "25 agents • 6 rounds • DeepSeek V3", agents: 25, rounds: 6, gen: 3, model: "deepseek-v3" },
-                    { id: "deep" as const, label: "Deep", desc: "100 agents • 12 rounds • GPT-4o Mini", agents: 100, rounds: 12, gen: 5, model: "gpt-4o-mini" },
-                    { id: "super" as const, label: "Super", desc: "500 agents • 24 rounds • Qwen", agents: 500, rounds: 24, gen: 10, model: "qwen" }
-                  ].map(lvl => (
-                    <button
-                      key={lvl.id}
-                      onClick={() => {
-                        setDepthLevel(lvl.id);
-                        setAgents(lvl.agents);
-                        setRounds(lvl.rounds);
-                        setParallelGen(lvl.gen);
-                        setLlmModel(lvl.model);
-                      }}
-                      style={{
-                        padding: "20px 16px",
-                        background: depthLevel === lvl.id ? "rgba(255,107,0,0.08)" : "transparent",
-                        border: `1px solid ${depthLevel === lvl.id ? "var(--accent)" : "var(--border)"}`,
-                        color: depthLevel === lvl.id ? "var(--text-primary)" : "var(--text-muted)",
-                        borderRadius: 12,
-                        cursor: "pointer",
-                        textAlign: "left",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 8,
-                        transition: "all 0.1s"
-                      }}
-                    >
-                      <div style={{ fontSize: 13, fontWeight: "bold", textTransform: "uppercase" }}>{lvl.label}</div>
-                      <div style={{ fontSize: 10, lineHeight: 1.4 }}>{lvl.desc}</div>
-                    </button>
-                  ))}
-                </div>
-
-                <div style={{ marginTop: 24, fontSize: 11, color: "#888" }}>
-                  Estimated runtime: ~{estMins > 0 ? `${estMins} minutes ` : ""}{estSecs} seconds
-                </div>
-              </div>
-
-
-              {/* 03 Prompt */}
-              <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 16, padding: "24px" }}>
-                <div style={{ color: "var(--text-primary)", fontWeight: 800, fontSize: 18, marginBottom: 16 }}>03. Simulated Prompt Words</div>
-                
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-                  {DOMAINS.map(d => (
-                    <button key={d.id} onClick={() => handleDomain(d.id)} style={{ padding: "6px 14px", background: domain === d.id ? "rgba(255,255,255,0.1)" : "transparent", borderRadius: 99, border: `1px solid ${domain === d.id ? "var(--text-primary)" : "var(--border)"}`, color: domain === d.id ? "var(--text-primary)" : "var(--text-muted)", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all 0.15s" }}>
-                      {d.label}
-                    </button>
-                  ))}
-                </div>
-
-                <textarea
-                  value={scenario}
-                  onChange={(e) => setScenario(e.target.value)}
-                  placeholder={`Use natural language to define your scenario...\ne.g. "What public opinion trends would emerge..."`}
-                  style={{ width: "100%", height: 160, background: "#050810", border: "1px solid var(--border)", borderRadius: 12, color: "var(--text-primary)", padding: 20, fontSize: 14, outline: "none", resize: "vertical", lineHeight: 1.5 }}
-                />
-                
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 10, color: "#666" }}>
-                  <div>{scenario.length} characters</div>
-                  <div>Engine: MiroFish-V1.0</div>
-                </div>
-              </div>
-
-
-              {/* Generating seed banner */}
-              {isGeneratingSeed && (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#0d1a0d", border: "1px solid #1a4a1a", color: "#5a9a5a", fontSize: 12, fontFamily: "monospace" }}>
-                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
-                    <Loader2 size={13} />
-                  </motion.div>
-                  ⚙ Generating 500-word reality seed via DeepSeek… Start button will enable when complete.
-                </div>
-              )}
-
-              {/* Seed error banner */}
-              {seedError && !isGeneratingSeed && (
-                <div style={{ padding: "10px 14px", background: "#1a0d0d", border: "1px solid #4a1a1a", color: "#ff6666", fontSize: 12, fontFamily: "monospace" }}>
-                  ✗ Seed generation failed: {seedError}
-                  <button onClick={() => handleGenerateSeed()} style={{ marginLeft: 12, background: "transparent", border: "1px solid #ff6666", color: "#ff6666", cursor: "pointer", padding: "2px 8px", fontSize: 11, fontFamily: "monospace" }}>
-                    Retry
-                  </button>
-                </div>
-              )}
-
-              {/* Launch */}
-              <button
-                onClick={startSimulation}
-                disabled={!btnReady}
-                style={{ 
-                  width: "100%", padding: "18px 24px", background: btnReady ? "var(--accent)" : "var(--border)", color: btnReady ? "#000" : "var(--text-muted)",
-                  border: "none", borderRadius: 16, fontSize: 18, fontWeight: 800, cursor: btnReady ? "pointer" : "not-allowed",
-                  display: "flex", justifyContent: "space-between", alignItems: "center", transition: "all 0.2s"
-                }}
-              >
-                <span>DEPLOY SIMULATION</span>
-                <ArrowRight size={18} />
-              </button>
-
-              </>
-            )}
-
+            </div>
           </div>
-        </div>
-
-        {/* BOTTOM TABLE */}
-        <div style={{ maxWidth: 1200, margin: "60px auto 0", borderTop: "1px solid #222", paddingTop: 40 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-            <div style={{ fontSize: 12, color: "#888", textTransform: "uppercase", letterSpacing: 1 }}>◇ Previous simulations</div>
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", minWidth: 600, borderCollapse: "collapse", fontSize: 12 }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid #333", textAlign: "left", color: "#666" }}>
-                <th style={{ padding: "12px 8px", fontWeight: "normal" }}>#</th>
-                <th style={{ padding: "12px 8px", fontWeight: "normal" }}>Scenario</th>
-                <th style={{ padding: "12px 8px", fontWeight: "normal" }}>Domain</th>
-                <th style={{ padding: "12px 8px", fontWeight: "normal" }}>Agents</th>
-                <th style={{ padding: "12px 8px", fontWeight: "normal" }}>Rounds</th>
-                <th style={{ padding: "12px 8px", fontWeight: "normal" }}>Status</th>
-                <th style={{ padding: "12px 8px", fontWeight: "normal" }}>Date</th>
-                <th style={{ padding: "12px 8px", fontWeight: "normal" }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pastSims.map((sim, idx) => {
-                const isFail = sim.status === "failed";
-                const isRun = sim.status === "running" || sim.status === "pending";
-                return (
-                <tr key={sim.id} style={{ borderBottom: "1px solid #222", color: "#ccc" }}>
-                  <td style={{ padding: "12px 8px" }}>0{idx+1}</td>
-                  <td style={{ padding: "12px 8px" }}>{sim.scenario.substring(0, 40)}{sim.scenario.length > 40 ? "..." : ""}</td>
-                  <td style={{ padding: "12px 8px", textTransform: "capitalize" }}>{sim.domain}</td>
-                  <td style={{ padding: "12px 8px" }}>{sim.agent_count}</td>
-                  <td style={{ padding: "12px 8px" }}>{sim.rounds}</td>
-                  <td style={{ padding: "12px 8px" }}>
-                    <span style={{ color: isFail ? "#888888" : isRun ? "#ffffff" : "#cccccc" }}>
-                      {sim.status.charAt(0).toUpperCase() + sim.status.slice(1)}
-                    </span>
-                  </td>
-                  <td style={{ padding: "12px 8px", color: "#777" }}>{new Date(sim.created_at).toLocaleDateString()}</td>
-                  <td style={{ padding: "12px 8px" }}>
-                    <Link href={`/simulate/mirofish/${sim.id}`} style={{ color: "#fff", textDecoration: "none" }}>
-                      {[isRun ? "[Live →]" : "[View →]"]}
-                    </Link>
-                  </td>
-                </tr>
-              )})}
-              {pastSims.length === 0 && (
-                <tr>
-                  <td colSpan={8} style={{ padding: "24px 8px", textAlign: "center", color: "#555" }}>No previous simulations found.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          </div>
-        </div>
-
-        {/* TOP SIMULATIONS TODAY */}
-        <div style={{ maxWidth: 1200, margin: "60px auto 48px", borderTop: "1px solid #222", paddingTop: 40 }}>
-          <TopSimulationsSection />
-        </div>
-
+        )}
       </div>
     </div>
   );

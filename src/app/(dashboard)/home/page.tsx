@@ -137,6 +137,7 @@ export default function HomePage() {
   const [simSort, setSimSort] = useState("divergence")
   const [showMore, setShowMore] = useState(false)
   const [showScrollBtn, setShowScrollBtn] = useState(true)
+  const [mobileSlideOpen, setMobileSlideOpen] = useState(false)
 
   useEffect(() => {
     // Wait a brief moment to ensure DOM is ready
@@ -231,20 +232,33 @@ export default function HomePage() {
   return (
     <div style={{ background: "var(--bg-primary)", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
-      {/* ── TOP BAR ── */}
-      <div style={{ padding: "8px 24px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexShrink: 0, overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
-        <div className="stat-pills-row">
-          {topDiv && <StatPill label="Top Div" value={`${topDiv.topic?.slice(0, 20)}… ${topDiv.divergence > 0 ? "+" : ""}${topDiv.divergence}%`} color={Math.abs(topDiv.divergence ?? 0) > 10 ? "var(--accent)" : undefined} />}
-          <StatPill label="Breaking" value={`${breakingCount} events`} color={breakingCount > 0 ? "#ef4444" : undefined} />
-          {stats && <StatPill label="Fear & Greed" value={`${stats.fearGreedValue} · ${stats.fearGreedLabel}`} color={stats.fearGreedValue > 60 ? "#22c55e" : stats.fearGreedValue < 40 ? "#ef4444" : "var(--accent)"} />}
-        </div>
-      </div>
+
 
       {/* ── BODY: 75/25 split ── */}
-      <div id="main-chart-area" className="home-hero-layout" style={{ display: "grid", gridTemplateColumns: "1fr 340px", height: "calc(100vh - 47px)", minHeight: 600, overflow: "hidden", borderBottom: "1px solid var(--border)" }}>
-
+      <div 
+        id="main-chart-area" 
+        className="home-hero-layout" 
+        style={{ 
+          display: "grid", 
+          gridTemplateColumns: "1fr 340px", 
+          height: "calc(100vh - 47px)", 
+          minHeight: 500, 
+          background: "#000000", 
+          overflow: "hidden" 
+        }}
+      >
         {/* ── LEFT: Featured Carousel (75%) ── */}
-        <div style={{ display: "flex", flexDirection: "column", borderRight: "1px solid var(--border)", padding: "32px 40px", overflow: "hidden", position: "relative", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ 
+          display: "flex", 
+          flexDirection: "column", 
+          borderRight: "1px solid var(--border)", 
+          padding: "clamp(16px, 4vw, 32px) clamp(16px, 5vw, 40px)",
+          flex: 1, 
+          minWidth: 0, 
+          position: "relative",
+          alignItems: "center", 
+          justifyContent: "center" 
+        }}>
           
           <AnimatePresence mode="wait">
             {displayed.length > 0 ? (
@@ -257,13 +271,15 @@ export default function HomePage() {
                 style={{
                   width: "100%",
                   maxWidth: 980,
-                  background: "#141414",
+                  background: "#ffffff",
                   border: "1px solid var(--border)",
                   borderRadius: 20,
                   display: "flex",
                   flexDirection: "column",
                   overflow: "hidden",
-                  boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.08)",
+                  position: "relative",
+                  color: "#000000",
                 }}
               >
                 {(() => {
@@ -279,69 +295,132 @@ export default function HomePage() {
                     <div className="home-carousel-card" style={{ display: "flex", flex: 1, minHeight: 460 }}>
                       
                       {/* Carousel Card Left Side */}
-                      <div style={{ flex: 1, padding: "clamp(20px, 4vw, 40px)", display: "flex", flexDirection: "column" }}>
+                      <div className="home-carousel-left" style={{ flex: 1, padding: "clamp(20px, 4vw, 40px)", display: "flex", flexDirection: "column" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-                          <div style={{ width: 36, height: 36, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)", background: "#111", flexShrink: 0 }}>
+                          <div style={{ width: 36, height: 36, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(0,0,0,0.08)", background: "#f5f5f5", flexShrink: 0 }}>
                             <img src="/polymarket.webp" alt="Polymarket" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           </div>
                           <div>
-                            <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>Polymarket</div>
-                            {t.section && <div style={{ fontSize: 9, color: "var(--accent-soft)", fontWeight: 700 }}>{t.section}</div>}
+                            <div style={{ fontSize: 11, color: "#666666", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>Polymarket</div>
+                            {t.section && <div style={{ fontSize: 9, color: "#000000", fontWeight: 700 }}>{t.section}</div>}
                           </div>
                         </div>
                         
-                        <div style={{ fontSize: "clamp(18px, 4vw, 28px)", fontWeight: 800, color: "var(--text-primary)", lineHeight: 1.3, marginBottom: 40 }}>
+                        <div style={{ fontSize: "clamp(18px, 4vw, 24px)", fontWeight: 800, color: "#000000", lineHeight: 1.3, marginBottom: 24 }}>
                           {t.topic}
                         </div>
                         
-                        <div style={{ display: "flex", flexDirection: "column", gap: 20, flex: 1 }}>
-                          {outcomes.slice(0, 4).map((o, i) => (
-                            <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                              <span style={{ fontSize: "clamp(12px, 3vw, 14px)", fontWeight: 700, color: "var(--text-secondary)" }}>{o.label}</span>
-                              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                                {o.hemloProb !== undefined && (
-                                  <span style={{ fontSize: "clamp(11px, 2.5vw, 12px)", fontWeight: 600, color: "var(--accent)" }}>AI {Math.round(o.hemloProb)}%</span>
-                                )}
-                                <span style={{ fontSize: "clamp(14px, 3.5vw, 16px)", fontWeight: 800, color: "var(--text-primary)", width: 44, textAlign: "right" }}>{Math.round(o.prob)}%</span>
+                        <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+                          {/* Outcomes: Desktop only on the left side */}
+                          <div className="hide-mobile" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                            {outcomes.slice(0, 4).map((o, i) => (
+                              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                <span style={{ fontSize: "clamp(12px, 3vw, 14px)", fontWeight: 700, color: "#333333" }}>{o.label}</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                  {o.hemloProb !== undefined && (
+                                    <span style={{ fontSize: "clamp(11px, 2.5vw, 12px)", fontWeight: 600, color: "var(--accent)" }}>AI {Math.round(o.hemloProb)}%</span>
+                                  )}
+                                  <span style={{ fontSize: "clamp(14px, 3.5vw, 16px)", fontWeight: 800, color: "#000000", width: 44, textAlign: "right" }}>{Math.round(o.prob)}%</span>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
+                          
+                          {/* Graph: Mobile only on the left side */}
+                          <div className="mobile-only" style={{ height: 120, width: "100%", opacity: 1, marginTop: 10 }}>
+                             <HemloIndexChart 
+                               data={genIndexData(40, t.hemloOdds ?? 50, parseInt(t.polymarketOdds ?? "50"))} 
+                               idxColor={"#000000"} 
+                               bg={"rgba(0,0,0,0)"} 
+                               showGrid={false}
+                             />
+                          </div>
                         </div>
                         
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 32 }}>
+                        {/* Pagination: Desktop only */}
+                        <div className="hide-mobile" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 32 }}>
                           <div style={{ display: "flex", gap: 6 }}>
                             {displayed.map((_, i) => (
-                              <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: i === activeIdx ? "var(--text-primary)" : "var(--border)" }} />
+                              <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: i === activeIdx ? "#000000" : "#cccccc" }} />
                             ))}
                           </div>
                           <div style={{ display: "flex", gap: 12 }}>
-                            <button onClick={() => setChartTab(((activeIdx - 1 + displayed.length) % displayed.length) as any)} style={{ padding: "8px 16px", borderRadius: 20, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>&lt; Prev</button>
-                            <button onClick={() => setChartTab(((activeIdx + 1) % displayed.length) as any)} style={{ padding: "8px 16px", borderRadius: 20, background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Next &gt;</button>
+                            <button onClick={() => setChartTab(((activeIdx - 1 + displayed.length) % displayed.length) as any)} style={{ padding: "8px 16px", borderRadius: 20, background: "#f5f5f5", border: "1px solid #e0e0e0", color: "#000", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>&lt; Prev</button>
+                            <button onClick={() => setChartTab(((activeIdx + 1) % displayed.length) as any)} style={{ padding: "8px 16px", borderRadius: 20, background: "#f5f5f5", border: "1px solid #e0e0e0", color: "#000", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Next &gt;</button>
                           </div>
                         </div>
+
+                        {/* Mobile Navigation Dots (Simplified) */}
+                        <div className="mobile-only" style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 16 }}>
+                          {displayed.map((_, i) => (
+                            <div key={i} style={{ width: 4, height: 4, borderRadius: "50%", background: i === activeIdx ? "#000000" : "#eeeeee" }} />
+                          ))}
+                        </div>
                       </div>
+
+                      {/* Mobile Toggle Button (Visible only on mobile) */}
+                      <button 
+                        className="mobile-only"
+                        onClick={() => setMobileSlideOpen(!mobileSlideOpen)}
+                        style={{
+                          position: "absolute", top: 16, right: 16, zIndex: 30,
+                          width: 32, height: 32, borderRadius: "50%",
+                          background: "#000000", border: "1px solid #222222",
+                          display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.15)", padding: 6,
+                        }}
+                      >
+                        {mobileSlideOpen ? (
+                          <span style={{ color: "white", fontSize: 16, fontWeight: "bold" }}>×</span>
+                        ) : (
+                          <img src="/logo.svg" alt="Toggle Intelligence" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                        )}
+                      </button>
                       
                       {/* Carousel Card Right Side (Divergence Graphic/Index) */}
-                      <div className="home-carousel-right" style={{ width: 340, background: "rgba(0,0,0,0.3)", borderLeft: "1px solid var(--border)", display: "flex", flexDirection: "column", padding: 24, position: "relative", overflow: "hidden" }}>
+                      <div className={`home-carousel-right ${mobileSlideOpen ? 'open' : ''}`} style={{ width: 340, background: "#f8f9fa", borderLeft: "1px solid #e0e0e0", display: "flex", flexDirection: "column", padding: 24, position: "relative", overflow: "hidden" }}>
                         <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", height: "100%" }}>
-                          <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 24 }}>Simulation Intelligence</div>
+                          <div style={{ fontSize: 11, color: "#666666", textTransform: "uppercase", letterSpacing: 1, marginBottom: 24 }}>Simulation Intelligence</div>
                           
                           <div style={{ marginBottom: 24 }}>
-                             <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 4 }}>Divergence Signal</div>
+                             <div style={{ fontSize: 12, fontWeight: 600, color: "#666666", marginBottom: 4 }}>Divergence Signal</div>
                              <div style={{ fontSize: "clamp(24px, 5vw, 32px)", fontWeight: 900, color: (t.divergence ?? 0) > 0 ? "#22c55e" : "#ef4444" }}>
                                {(t.divergence ?? 0) > 0 ? "+" : ""}{t.divergence}%
                              </div>
-                             <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 8, lineHeight: 1.5 }}>
+                             <div style={{ fontSize: 12, color: "#444444", marginTop: 8, lineHeight: 1.5 }}>
                                {t.divergenceSignal || "Market consensus lacks critical contextual data."}
                              </div>
                           </div>
 
-                          <div style={{ marginTop: "auto" }}>
-                            <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Simulated Path</div>
-                            <div style={{ height: 120, width: "100%", opacity: 0.8 }}>
-                               <HemloIndexChart data={genIndexData(40, t.hemloOdds ?? 50, parseInt(t.polymarketOdds ?? "50"))} idxColor={"var(--accent)"} />
+                           <div style={{ marginTop: "auto" }}>
+                            {/* Outcomes duplicate for mobile drawer */}
+                            <div className="mobile-only" style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
+                              <div style={{ fontSize: 10, color: "#666666", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Market Pricing</div>
+                              {outcomes.slice(0, 4).map((o, i) => (
+                                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                  <span style={{ fontSize: "12px", fontWeight: 700, color: "#333333" }}>{o.label}</span>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    {o.hemloProb !== undefined && (
+                                      <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--accent)" }}>AI {Math.round(o.hemloProb)}%</span>
+                                    )}
+                                    <span style={{ fontSize: "14px", fontWeight: 800, color: "#000000", width: 36, textAlign: "right" }}>{Math.round(o.prob)}%</span>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                            <Link href={`/simulate/staple/report?topic=${encodeURIComponent(t.topic)}`} style={{ display: "block", width: "100%", background: "var(--text-primary)", color: "#000", textAlign: "center", padding: "12px", borderRadius: 8, marginTop: 16, fontSize: 13, fontWeight: 800, textDecoration: "none" }}>
+
+                            <div className="hide-mobile">
+                              <div style={{ fontSize: 10, color: "#666666", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Simulated Path</div>
+                              <div style={{ height: 120, width: "100%", opacity: 1 }}>
+                                 <HemloIndexChart 
+                                   data={genIndexData(40, t.hemloOdds ?? 50, parseInt(t.polymarketOdds ?? "50"))} 
+                                   idxColor={"#000000"} 
+                                   bg={"rgba(0,0,0,0)"} 
+                                   showGrid={false}
+                                 />
+                              </div>
+                            </div>
+                            <Link href={`/simulate/staple/report?topic=${encodeURIComponent(t.topic)}`} style={{ display: "block", width: "100%", background: "#000000", color: "#ffffff", textAlign: "center", padding: "12px", borderRadius: 8, marginTop: 16, fontSize: 13, fontWeight: 800, textDecoration: "none" }}>
                               View Full Report
                             </Link>
                           </div>

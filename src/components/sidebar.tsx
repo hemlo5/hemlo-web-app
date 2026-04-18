@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 const MODES = [
-  { icon: BarChart2, label: "Markets",    href: "/home",             active: true, iconUrl: "/polymarket.webp" },
+  { icon: BarChart2, label: "Markets",    href: "/home",             active: true, iconUrls: ["/polymarket.webp", "/kalshi.webp"] },
   { icon: Cpu,       label: "Simulate",   href: "/simulate/mirofish",active: true, iconUrl: "/logo.svg" },
   { icon: Newspaper, label: "Hot",        href: "/hot",              active: true },
   { icon: MapPin,    label: "Geo Map",    href: "/geo",              active: true },
@@ -188,7 +188,12 @@ export function Sidebar() {
             transition: "background 0.2s, border-color 0.2s",
           }}
         >
-          {mode.iconUrl ? (
+          {mode.iconUrls ? (
+            <div style={{ position: "relative", width: 28, height: 28 }}>
+              <img src={mode.iconUrls[0]} alt="Polymarket" style={{ width: 20, height: 20, position: "absolute", top: 0, left: 0, objectFit: "contain", zIndex: 2, filter: "drop-shadow(1px 1px 2px rgba(0,0,0,0.8))" }} />
+              <img src={mode.iconUrls[1]} alt="Kalshi" style={{ width: 20, height: 20, position: "absolute", bottom: 0, right: 0, objectFit: "contain", zIndex: 1 }} />
+            </div>
+          ) : mode.iconUrl ? (
             <img src={mode.iconUrl} alt={mode.label} style={{ width: 20, height: 20, objectFit: "contain", filter: "none" }} />
           ) : (
             <Icon size={20} color={isActive ? "var(--accent)" : "var(--text-secondary)"} />
@@ -252,7 +257,12 @@ export function Sidebar() {
           return (
             <Link key={mode.label} href={mode.active ? mode.href : "#"}
               className={"bnav-item" + (isActive ? " active" : "")}>
-              {mode.iconUrl ? (
+              {mode.iconUrls ? (
+                <div style={{ position: "relative", width: 24, height: 24 }}>
+                  <img src={mode.iconUrls[0]} alt="Polymarket" style={{ width: 16, height: 16, position: "absolute", top: 0, left: 0, zIndex: 2, filter: "drop-shadow(1px 1px 1px rgba(0,0,0,0.5))" }} />
+                  <img src={mode.iconUrls[1]} alt="Kalshi" style={{ width: 16, height: 16, position: "absolute", bottom: 0, right: 0, zIndex: 1 }} />
+                </div>
+              ) : mode.iconUrl ? (
                 <img src={mode.iconUrl} alt={mode.label} style={{ width: 18, height: 18, objectFit: "contain", filter: "none" }} />
               ) : (
                 <Icon size={18} color={isActive ? "var(--accent)" : "var(--text-muted)"} />

@@ -10,6 +10,29 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "tokenId required" }, { status: 400 })
   }
 
+  // Mock Kalshi Trades
+  if (tokenId.startsWith("kalshi-")) {
+    const parts = tokenId.split("-");
+    const p = parseFloat(parts[parts.length - 1]) || 50;
+    const price = p / 100;
+
+    const trades = [];
+    const now = Date.now();
+    for (let i = 0; i < 15; i++) {
+        trades.push({
+            price: price + (Math.random() - 0.5) * 0.05,
+            size: Math.floor(10 + Math.random() * 500),
+            side: Math.random() > 0.5 ? "BUY" : "SELL",
+            timestamp: new Date(now - Math.random() * 86400000).toISOString(),
+            outcome: "Yes",
+        });
+    }
+    // Sort descending by time
+    trades.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return NextResponse.json({ trades }, { status: 200 });
+  }
+
   try {
     const res = await fetch(
       `https://clob.polymarket.com/trades?asset_id=${tokenId}&limit=15`,

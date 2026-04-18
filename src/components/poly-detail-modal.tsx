@@ -30,7 +30,7 @@ export type PolyMarket = {
   id: string;
   slug: string;
   question: string;
-  outcomes: Array<{ label: string; prob: number }>;
+  outcomes: Array<{ label: string; prob: number; volumeRaw?: number; hemloProb?: number }>;
   marketType: "binary" | "categorical";
   volume: string;
   volumeRaw: number;
@@ -1314,7 +1314,17 @@ export function PolyDetailModal({
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
                 {isLive ? <span style={{ display: "flex", alignItems: "center", gap: 4, background: "#22c55e15", border: "1px solid #22c55e30", borderRadius: 5, padding: "2px 8px", fontSize: 9, fontWeight: 800, color: "#22c55e" }}><motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 5, height: 5, borderRadius: "50%", background: "#22c55e" }} />LIVE</span> : <span style={{ background: "#66666618", border: "1px solid #66666630", borderRadius: 5, padding: "2px 8px", fontSize: 9, fontWeight: 800, color: "#666666" }}>CLOSED</span>}
                 {endDate && timeRemaining > 0 && <span style={{ fontSize: 10, color: daysLeft < 1 ? "#ffffff" : "#666666", fontWeight: 700 }}>Closes in {closesIn}</span>}
-                <a href={`https://polymarket.com/event/${market.slug}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#ccff00", textDecoration: "none", display: "flex", alignItems: "center", gap: 3 }}><ExternalLink size={10} /> Polymarket</a>
+                {(() => {
+                  const isKalshi = market.resolutionSource?.includes("kalshi.com");
+                  const link = isKalshi ? market.resolutionSource : `https://polymarket.com/event/${market.slug}`;
+                  const label = isKalshi ? "Kalshi" : "Polymarket";
+                  const color = isKalshi ? "#22c55e" : "#ccff00";
+                  return (
+                    <a href={link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color, textDecoration: "none", display: "flex", alignItems: "center", gap: 3 }}>
+                      <ExternalLink size={10} /> {label}
+                    </a>
+                  );
+                })()}
               </div>
             </div>
             <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#666666", cursor: "pointer", fontSize: 20, padding: 4 }}>✕</button>
@@ -1347,7 +1357,9 @@ export function PolyDetailModal({
                   {market.icon && <img src={market.icon} alt="" style={{ width: 28, height: 28, borderRadius: 7 }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#ffffff" }}>{o.label}</div>
-                    <div style={{ fontSize: 10, color: "#666666" }}>{market.volume} Vol.</div>
+                    <div style={{ fontSize: 10, color: "#666666" }}>
+                      {typeof o.volumeRaw === "number" ? fmtVol(o.volumeRaw) : market.volume} Vol.
+                    </div>
                   </div>
                   <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, fontWeight: 900, color: barColor, minWidth: 60, textAlign: "right" }}>{o.prob}%</div>
                   <div style={{ width: 80, height: 6, borderRadius: 3, background: "#222222", overflow: "hidden" }}><div style={{ width: `${o.prob}%`, height: "100%", background: barColor, borderRadius: 3 }} /></div>

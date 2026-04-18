@@ -4,7 +4,7 @@ import { createClient } from "@/utils/supabase/server"
 import { checkSimulationLimit, incrementSimulationCount } from "@/lib/simulation-usage"
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyDh7Bf_x_kwWsPkoCo7u_7rAGGGiF9K_LI"
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${GEMINI_KEY}`
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`
 
 export async function POST(req: NextRequest) {
   try {

@@ -10,6 +10,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "tokenId required" }, { status: 400 })
   }
 
+  // Mock Kalshi Orderbook
+  if (tokenId.startsWith("kalshi-")) {
+    const parts = tokenId.split("-");
+    const p = parseFloat(parts[parts.length - 1]) || 50;
+    const price = p / 100;
+
+    const bids = [];
+    const asks = [];
+    for (let i = 1; i <= 8; i++) {
+        const bidPrice = Math.max(0.01, price - (0.01 * i));
+        const askPrice = Math.min(0.99, price + (0.01 * i));
+        bids.push({ price: bidPrice, size: 50 + Math.random() * 2000 });
+        asks.push({ price: askPrice, size: 50 + Math.random() * 2000 });
+    }
+    return NextResponse.json({ bids, asks }, { status: 200 });
+  }
+
   try {
     const res = await fetch(`https://clob.polymarket.com/book?token_id=${tokenId}`, {
       headers: { "User-Agent": "hemlo/1.0" },

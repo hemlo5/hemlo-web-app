@@ -12,6 +12,39 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "tokenId required" }, { status: 400 })
   }
 
+  // Handle mock Kalshi history
+  if (tokenId.startsWith("kalshi-")) {
+    const parts = tokenId.split("-");
+    const currentPrice = parseFloat(parts[parts.length - 1]) || 50;
+    
+    // Generate realistic looking chart history leading up to the current price
+    const history = [];
+    const now = Math.floor(Date.now() / 1000);
+    const numPoints = 100; // 100 data points
+    // 1 week of data:
+    const step = (7 * 24 * 60 * 60) / numPoints;
+    let price = 50; // starts at 50% randomly in the past
+    
+    for (let i = 0; i < numPoints; i++) {
+        // Simple random walk that eventually converges to target
+        const progress = i / numPoints;
+        const pullToTarget = (currentPrice - price) * progress * 0.15;
+        const noise = (Math.random() - 0.5) * 8;
+        
+        price = Math.max(1, Math.min(99, price + pullToTarget + noise));
+        
+        // Pin final point exactly to current
+        if (i === numPoints - 1) price = currentPrice;
+        
+        history.push({
+            t: now - (numPoints - i) * step,
+            p: price / 100
+        });
+    }
+    
+    return NextResponse.json({ history }, { status: 200 })
+  }
+
   try {
     const url = `https://clob.polymarket.com/prices-history?market=${tokenId}&interval=${interval}&fidelity=${fidelity}`
     const res = await fetch(url, {

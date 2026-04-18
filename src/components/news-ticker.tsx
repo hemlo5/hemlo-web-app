@@ -35,7 +35,11 @@ export function NewsTicker() {
         <motion.div
           key={items.length}
           animate={{ x: ["-0%", "-50%"] }}
-          transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+          transition={{ 
+            duration: typeof window !== 'undefined' && window.innerWidth < 768 ? 10 : 25, 
+            repeat: Infinity, 
+            ease: "linear" 
+          }}
           style={{ display: "flex", alignItems: "center", height: "100%", gap: 0, whiteSpace: "nowrap" }}
         >
           {ticker.map((item, i) => {
