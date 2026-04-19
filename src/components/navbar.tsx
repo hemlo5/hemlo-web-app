@@ -26,7 +26,7 @@ export function Navbar() {
   const handleSignIn = async () => {
     // We use window.location.origin to ensure the redirect always matches the current domain
     const origin = typeof window !== "undefined" ? window.location.origin : ""
-    const redirectTo = `${origin}/auth/callback?next=/home`
+    const redirectTo = `${origin}/auth/callback`
 
     await supabase.auth.signInWithOAuth({
       provider: "google",

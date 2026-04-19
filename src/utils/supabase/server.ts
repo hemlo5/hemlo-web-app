@@ -1,4 +1,4 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 const isProd = process.env.NODE_ENV === 'production'
@@ -11,32 +11,24 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
+        // @supabase/ssr ≥0.5 requires getAll/setAll — NOT the old get/set/remove.
+        // Using the old API meant getAll() was undefined, so the PKCE code
+        // verifier cookie could never be found → "PKCE not found" on login.
+        getAll() {
+          return cookieStore.getAll()
         },
-        set(name: string, value: string, options: CookieOptions) {
+        setAll(cookiesToSet) {
           try {
-            cookieStore.set({
-              name,
-              value,
-              ...options,
-              // In production, share cookies across all .hemloai.com subdomains
-              ...(isProd ? { domain: '.hemloai.com' } : {}),
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, {
+                ...options,
+                // In prod: share session cookies across *.hemloai.com subdomains
+                ...(isProd ? { domain: '.hemloai.com' } : {}),
+              })
             })
           } catch {
-            // Called from Server Component — middleware will handle session refresh
-          }
-        },
-        remove(name: string, options: CookieOptions) {
-          try {
-            cookieStore.set({
-              name,
-              value: '',
-              ...options,
-              ...(isProd ? { domain: '.hemloai.com' } : {}),
-            })
-          } catch {
-            // Called from Server Component — middleware will handle session refresh
+            // setAll is called from a Server Component where the cookie store
+            // is read-only. The middleware handles refreshing the session.
           }
         },
       },

@@ -33,21 +33,26 @@ export async function GET(request: NextRequest) {
 
   if (code) {
     const supabase = await createClient()
+
+    console.log('[auth/callback] origin:', origin, '| next:', next, '| has code:', !!code)
+
     const { error } = await supabase.auth.exchangeCodeForSession(code)
-    
+
     let redirectUrl = next.startsWith('http') ? next : `${origin}${next}`
 
     if (!error) {
+      console.log('[auth/callback] ✓ Session exchanged — redirecting to', redirectUrl)
       return NextResponse.redirect(redirectUrl)
     }
-    
+
     // Check if maybe they are already logged in (happens with rapid double-fires)
     const { data: { session } } = await supabase.auth.getSession()
     if (session) {
+      console.log('[auth/callback] Already have session — redirecting to', redirectUrl)
       return NextResponse.redirect(redirectUrl)
     }
-    
-    console.error('[auth/callback] exchangeCodeForSession error:', error.message)
+
+    console.error('[auth/callback] ✗ exchangeCodeForSession error:', error.message)
     // Redirect with the error so we can debug it
     return NextResponse.redirect(`${redirectUrl}?auth_error=${encodeURIComponent(error.message)}`)
   }

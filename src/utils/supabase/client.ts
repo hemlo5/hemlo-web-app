@@ -91,6 +91,7 @@ function _buildClient(): SupabaseClient {
         // the singleton ensures the back-off isn't reset by competing instances.
       },
       cookieOptions: {
+        path: '/',
         ...(isProd ? { domain: '.hemloai.com', secure: true } : {}),
         sameSite: 'lax',
         maxAge: 60 * 60 * 24 * 365, // 1 year

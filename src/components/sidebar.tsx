@@ -146,7 +146,7 @@ export function Sidebar() {
   const doGoogleSignIn = async () => {
     setShowSignIn(false);
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const redirectTo = `${origin}/auth/callback?next=/home`;
+    const redirectTo = `${origin}/auth/callback`;
 
     await supabase.auth.signInWithOAuth({
       provider: "google",

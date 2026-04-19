@@ -85,6 +85,9 @@ function MirofishTerminalContent() {
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<any>(null);
   const esRef = useRef<EventSource | null>(null); // keep SSE ref for reconnect
+  // Prevents the persist effect from re-writing sessionStorage AFTER a done/error
+  // handler has already cleared it (React state batching race condition).
+  const isCompletingRef = useRef(false);
 
   const SESSION_KEY = "hemlo_running_sim";
 
@@ -116,7 +119,7 @@ function MirofishTerminalContent() {
   
   // ── PERSIST running state to sessionStorage so navigation away doesn't lose it
   useEffect(() => {
-    if (phase === "running" && miroProjectId) {
+    if (phase === "running" && miroProjectId && !isCompletingRef.current) {
       const payload = { phase, elapsed, activeStep, steps, liveLogs, miroProjectId, scenario, domain, agents, rounds, llmModel, parallelGen };
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
     }
@@ -129,31 +132,37 @@ function MirofishTerminalContent() {
   useEffect(() => {
     const raw = sessionStorage.getItem(SESSION_KEY);
     if (!raw) return;
-    try {
-      const saved = JSON.parse(raw);
-      if (saved.phase !== "running" || !saved.miroProjectId) {
-        sessionStorage.removeItem(SESSION_KEY); // clean up invalid state
+
+    let saved: any;
+    try { saved = JSON.parse(raw); } catch { sessionStorage.removeItem(SESSION_KEY); return; }
+    if (saved.phase !== "running" || !saved.miroProjectId) {
+      sessionStorage.removeItem(SESSION_KEY);
+      return;
+    }
+
+    // ── Everything is async so the DB check BLOCKS the reconnect — no race condition
+    (async () => {
+      // Step 1: Check if this simulation already completed in the DB.
+      // If yes: clear storage and go to results. Do NOT reconnect to Modal.
+      try {
+        const res = await fetch("/api/custom-simulations");
+        const data = await res.json();
+        const existing = (data.simulations || []).find((s: any) => s.id === saved.miroProjectId);
+        if (existing?.status === "completed" || existing?.status === "failed") {
+          sessionStorage.removeItem(SESSION_KEY);
+          if (existing.status === "completed") {
+            router.push(`/simulate/mirofish/${saved.miroProjectId}`);
+          }
+          return; // exit — never reconnect
+        }
+      } catch {
+        // Network error during check — also abort to be safe
+        // We could reconnect here, but it's safer not to risk double-runs
+        sessionStorage.removeItem(SESSION_KEY);
         return;
       }
 
-      // ── Safety check: verify the simulation isn't already completed in the DB.
-      // If it is, clear the stale session and redirect to results — don't re-run.
-      (async () => {
-        try {
-          const res = await fetch(`/api/custom-simulations`);
-          const data = await res.json();
-          const existing = (data.simulations || []).find((s: any) => s.id === saved.miroProjectId);
-          if (existing?.status === "completed") {
-            sessionStorage.removeItem(SESSION_KEY);
-            router.push(`/simulate/mirofish/${saved.miroProjectId}`);
-            return;
-          }
-        } catch {
-          // If the check fails, fall through to reconnect as normal
-        }
-      })();
-
-      // Restore state
+      // Step 2: Simulation is genuinely still in progress. Restore UI state and reconnect.
       setPhase("running");
       setElapsed(saved.elapsed ?? 0);
       setActiveStep(saved.activeStep ?? 0);
@@ -165,10 +174,8 @@ function MirofishTerminalContent() {
       if (saved.agents) setAgents(saved.agents);
       if (saved.rounds) setRounds(saved.rounds);
 
-      // Restart elapsed timer
       timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
 
-      // Reconnect SSE to Modal
       const MODAL_URL = process.env.NEXT_PUBLIC_MODAL_URL || "https://vaishumaniket--hemlo-mirofish-run-simulation.modal.run";
       const simDbId = saved.miroProjectId;
       const addLogR = (msg: string) => {
@@ -217,6 +224,7 @@ function MirofishTerminalContent() {
             clearInterval(timerRef.current);
             setSteps(p => p.map((s, i) => i >= 3 ? { ...s, status: "done", time: getT() } : s));
             addLogR(`✓ Simulation complete! Redirecting...`);
+            isCompletingRef.current = true;
             sessionStorage.removeItem(SESSION_KEY);
             router.push(`/simulate/mirofish/${simDbId}`);
           }
@@ -224,6 +232,7 @@ function MirofishTerminalContent() {
             es.close();
             clearInterval(timerRef.current);
             addLogR(`✗ FAILED: ${event.message || "Unknown error"}`);
+            isCompletingRef.current = true;
             sessionStorage.removeItem(SESSION_KEY);
           }
         } catch (err) { console.error("SSE reconnect parse error", err); }
@@ -233,10 +242,10 @@ function MirofishTerminalContent() {
         es.close();
         clearInterval(timerRef.current);
         addLogR("✗ Connection to Modal engine lost after reconnect.");
+        isCompletingRef.current = true;
         sessionStorage.removeItem(SESSION_KEY);
       };
-
-    } catch (e) { console.error("[mirofish] sessionStorage restore error", e); }
+    })();
   }, []); // run once on mount
 
   useEffect(() => {
@@ -321,14 +330,12 @@ function MirofishTerminalContent() {
         const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
         if (refreshError || !refreshed.session) {
           setLaunchError("Your session has expired. Please sign in again.");
-          setIsLaunching(false);
           return;
         }
       }
     } catch (authErr) {
       console.error("[mirofish] auth check failed:", authErr);
       setLaunchError("Authentication check failed. Please refresh the page.");
-      setIsLaunching(false);
       return;
     }
 
@@ -338,7 +345,6 @@ function MirofishTerminalContent() {
       const genSuccess = await handleGenerateSeed(scenario);
       if (!genSuccess) {
         setLaunchError(seedError || "Failed to generate reality seed. Please try again.");
-        setIsLaunching(false);
         return;
       }
     }
@@ -365,7 +371,6 @@ function MirofishTerminalContent() {
       const dbData = await dbRes.json();
       if (dbRes.status === 401) {
         setLaunchError("Session expired. Please sign in and try again.");
-        setIsLaunching(false);
         setPhase("idle");
         return;
       }
@@ -373,7 +378,6 @@ function MirofishTerminalContent() {
       if (simDbId) setMiroProjectId(simDbId);
     } catch {
       setLaunchError("Network error creating simulation. Please check your connection.");
-      setIsLaunching(false);
       setPhase("idle");
       return;
     }
@@ -475,7 +479,9 @@ function MirofishTerminalContent() {
             updateStep(3, "done", getT());
             updateStep(4, "done", getT());
             addLog(`✓ Simulation complete! Redirecting...`);
-            // Clear session BEFORE redirect so revisiting the page doesn't re-run the simulation
+            // Set completing flag FIRST — blocks the persist effect from re-writing
+            // sessionStorage due to React's batched state updates.
+            isCompletingRef.current = true;
             sessionStorage.removeItem(SESSION_KEY);
             router.push(`/simulate/mirofish/${simDbId}`);
           }
@@ -487,6 +493,8 @@ function MirofishTerminalContent() {
       es.onerror = () => {
         setIsLaunching(false);
         es.close();
+        isCompletingRef.current = true;
+        sessionStorage.removeItem(SESSION_KEY);
         markFailed("Connection to Modal engine lost.");
       };
 
