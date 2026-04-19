@@ -13,7 +13,10 @@ export const metadata: Metadata = {
     title: "HEMLO — Simulate Reality. Before You Live It.",
     description: "Predict how humans react to anything using multi-agent AI simulation.",
     type: "website",
+    url: "https://app.hemloai.com",
+    siteName: "Hemlo AI",
   },
+  metadataBase: new URL("https://app.hemloai.com"),
 }
 
 export default function RootLayout({

@@ -79,8 +79,12 @@ export function Navbar() {
 
       {/* Nav links */}
       <div style={{ display: "flex", alignItems: "center", gap: 32 }} className="hidden md:flex">
-        {["Features", "Pricing", "Docs"].map((item) => (
-          <Link key={item} href={item === "Pricing" ? "/pricing" : "#"}
+        {[
+          { label: "Features",  href: "/#features" },
+          { label: "Pricing",   href: "/pricing" },
+          { label: "Privacy",   href: "/privacy-policy" },
+        ].map((item) => (
+          <Link key={item.label} href={item.href}
             style={{
               color: "var(--text-secondary)",
               fontSize: 14, fontWeight: 500,
@@ -90,7 +94,7 @@ export function Navbar() {
             onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-primary)")}
             onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
           >
-            {item}
+            {item.label}
           </Link>
         ))}
       </div>
