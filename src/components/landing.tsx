@@ -489,12 +489,16 @@ export function Footer() {
         © 2025 HEMLO. Built to predict the future.
       </div>
       <div style={{ display: "flex", gap: 24 }}>
-        {["Privacy", "Terms", "Contact"].map((item) => (
-          <Link key={item} href="#" style={{ fontSize: 13, color: "var(--text-muted)", textDecoration: "none" }}
+        {[
+          { label: "Privacy", href: "/privacy-policy" },
+          { label: "Terms",   href: "/terms" },
+          { label: "Contact", href: "mailto:support@hemloai.com" },
+        ].map((item) => (
+          <Link key={item.label} href={item.href} style={{ fontSize: 13, color: "var(--text-muted)", textDecoration: "none" }}
             onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
             onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
           >
-            {item}
+            {item.label}
           </Link>
         ))}
       </div>
