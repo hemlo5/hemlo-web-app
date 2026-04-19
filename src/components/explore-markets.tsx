@@ -447,11 +447,17 @@ export function ExploreMarkets() {
               onClick={() => setTopTab(t.key as any)}
               style={{
                 padding: "8px 20px", borderRadius: "10px 10px 0 0",
-                border: "1px solid #1a1f2e",
-                borderBottom: topTab === t.key ? "1px solid #0c0f16" : "1px solid #1a1f2e",
-                background: topTab === t.key ? "#0c0f16" : "transparent",
-                color: topTab === t.key ? "#ffffff" : "#8a94a6",
-                fontWeight: topTab === t.key ? 700 : 500,
+                border: topTab === t.key 
+                  ? (t.key === "polymarket" ? "1px solid #2E5CFF" : "1px solid #00DD94")
+                  : "1px solid #1a1f2e",
+                borderBottom: topTab === t.key ? "none" : "1px solid #1a1f2e",
+                background: topTab === t.key 
+                  ? (t.key === "polymarket" ? "#2E5CFF" : "#00DD94") 
+                  : "transparent",
+                color: topTab === t.key 
+                  ? (t.key === "polymarket" ? "#ffffff" : "#000000") 
+                  : "#8a94a6",
+                fontWeight: topTab === t.key ? 800 : 500,
                 fontSize: 13, cursor: "pointer", transition: "all 0.15s",
                 position: "relative", zIndex: topTab === t.key ? 2 : 1,
                 display: "flex", alignItems: "center", justifyContent: "center"
@@ -459,8 +465,10 @@ export function ExploreMarkets() {
             >
               {t.key === "kalshi" && (
                 <span className="hide-mobile" style={{
-                  marginRight: 6, fontSize: 9, fontWeight: 800, letterSpacing: 1,
-                  color: "#22c55e", background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.25)",
+                  marginRight: 6, fontSize: 9, fontWeight: 900, letterSpacing: 1,
+                  color: topTab === t.key ? "#000000" : "#22c55e", 
+                  background: topTab === t.key ? "rgba(0,0,0,0.1)" : "rgba(34,197,94,0.12)", 
+                  border: topTab === t.key ? "1px solid rgba(0,0,0,0.2)" : "1px solid rgba(34,197,94,0.25)",
                   borderRadius: 4, padding: "1px 5px", textTransform: "uppercase", verticalAlign: "middle",
                 }}>TradFi</span>
               )}
