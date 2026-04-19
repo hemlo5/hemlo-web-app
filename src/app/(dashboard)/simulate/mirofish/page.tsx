@@ -374,6 +374,11 @@ function MirofishTerminalContent() {
         setPhase("idle");
         return;
       }
+      if (dbRes.status === 429) {
+        setLaunchError(dbData.error || "Daily limit reached. Please upgrade to run more simulations.");
+        setPhase("idle");
+        return;
+      }
       simDbId = dbData.simulation?.id || null;
       if (simDbId) setMiroProjectId(simDbId);
     } catch {
@@ -622,24 +627,51 @@ function MirofishTerminalContent() {
               >
                 <div style={{
                   width: 64, height: 64, borderRadius: "50%",
-                  background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)",
+                  background: launchError.includes("limit") ? "rgba(255,107,0,0.15)" : "rgba(239,68,68,0.15)", border: launchError.includes("limit") ? "1px solid rgba(255,107,0,0.4)" : "1px solid rgba(239,68,68,0.4)",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: 28,
-                }}>✕</div>
+                }}>
+                  {launchError.includes("limit") ? "⚡" : "✕"}
+                </div>
                 <div>
-                  <div style={{ fontSize: 17, fontWeight: 800, color: "#fff", marginBottom: 8 }}>Launch Failed</div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: "#fff", marginBottom: 8 }}>
+                    {launchError.includes("limit") ? "Daily Limit Reached" : "Launch Failed"}
+                  </div>
                   <div style={{ fontSize: 13, color: "#999", maxWidth: 320 }}>{launchError}</div>
                 </div>
-                <button
-                  onClick={() => { setIsLaunching(false); setLaunchError(null); }}
-                  style={{
-                    padding: "10px 28px", borderRadius: 10, background: "rgba(255,255,255,0.08)",
-                    border: "1px solid rgba(255,255,255,0.15)", color: "#fff", fontSize: 13,
-                    fontWeight: 700, cursor: "pointer",
-                  }}
-                >
-                  Dismiss & Retry
-                </button>
+                {launchError.includes("limit") ? (
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <button
+                      onClick={() => { setIsLaunching(false); setLaunchError(null); }}
+                      style={{
+                        padding: "10px 24px", borderRadius: 8, background: "transparent",
+                        border: "1px solid rgba(255,255,255,0.2)", color: "#ccc", fontSize: 13, cursor: "pointer",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => router.push("/pricing")}
+                      style={{
+                        padding: "10px 24px", borderRadius: 8, background: "#FF6B00",
+                        border: "none", color: "#000", fontSize: 13, fontWeight: "bold", cursor: "pointer",
+                      }}
+                    >
+                      Upgrade to Premium
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setIsLaunching(false); setLaunchError(null); }}
+                    style={{
+                      padding: "10px 28px", borderRadius: 10, background: "rgba(255,255,255,0.08)",
+                      border: "1px solid rgba(255,255,255,0.15)", color: "#fff", fontSize: 13,
+                      fontWeight: 700, cursor: "pointer",
+                    }}
+                  >
+                    Dismiss & Retry
+                  </button>
+                )}
               </motion.div>
             ) : (
               /* Queue animation state */

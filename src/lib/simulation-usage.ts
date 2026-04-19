@@ -1,8 +1,21 @@
 import { createClient as createSupabaseAdmin } from "@supabase/supabase-js"
 
+// Every tier name that can be stored in the profiles table
 const DAILY_LIMITS: Record<string, number> = {
-  normal: 2,
-  premium: 10,
+  free:    2,
+  normal:  2,
+  pro:     50,
+  premium: 50,  // alias for pro
+  founder: 200,
+}
+
+// Friendly display names for error messages
+const TIER_LABELS: Record<string, string> = {
+  free:    "Free",
+  normal:  "Free",
+  pro:     "Pro",
+  premium: "Pro",
+  founder: "Founder",
 }
 
 function getSupaAdmin() {
@@ -27,8 +40,9 @@ export async function checkSimulationLimit(userId: string): Promise<{ allowed: b
     .eq("id", userId)
     .single()
 
-  const tier = profile?.tier || "normal"
-  const limit = DAILY_LIMITS[tier] ?? 2
+  const tier = (profile?.tier || "normal").toLowerCase()
+  const limit = DAILY_LIMITS[tier] ?? 2  // unknown tier → safe default of 2
+  const tierLabel = TIER_LABELS[tier] ?? "Free"
 
   // Compute today's usage from the simulations tables (source of truth)
   const startOfDay = new Date()
@@ -45,11 +59,12 @@ export async function checkSimulationLimit(userId: string): Promise<{ allowed: b
   const usageToday = (mktCount ?? 0) + (customCount ?? 0)
 
   if (usageToday >= limit) {
+    const isFree = tier === "normal" || tier === "free"
     return {
       allowed: false,
-      reason: tier === "normal"
-        ? `Daily limit reached (${limit}/day on Free plan). Upgrade to Premium for 10 simulations per day.`
-        : `Daily limit reached (${limit}/day). Your premium limit resets at midnight UTC.`,
+      reason: isFree
+        ? `Daily limit reached (${limit}/day on Free plan). Upgrade to Pro for 50 simulations per day.`
+        : `Daily limit reached (${usageToday}/${limit} today on ${tierLabel} plan). Your limit resets at midnight UTC.`,
       usageToday,
       limit,
     }
