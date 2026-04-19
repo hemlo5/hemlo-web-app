@@ -105,7 +105,7 @@ function MirofishTerminalContent() {
   const [liveGraphEvent, setLiveGraphEvent] = useState<any>(null);
   const graphNodesAccRef = useRef<any[]>([]);
   const graphEdgesAccRef = useRef<any[]>([]);
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null); // ref on the scrollable box, NOT a sentinel
   const activeStepRef = useRef(0); // mirror of activeStep for use inside closures
 
   // Computed
@@ -224,9 +224,11 @@ function MirofishTerminalContent() {
     fetch("/api/custom-simulations").then(r => r.json()).then(d => setPastSims(d.simulations || []));
   }, []);
 
-  // Auto-scroll logs to bottom on new entry
+  // Auto-scroll the log box to bottom on new entry — scrolls ONLY the log container,
+  // not the page. Using scrollTop instead of scrollIntoView to avoid page hijacking.
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = logsContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [liveLogs]);
 
   const handleDomain = (id: string) => {
@@ -975,14 +977,13 @@ function MirofishTerminalContent() {
                     <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#444" }} />
                     Live Output Stream
                   </div>
-                  <div style={{ height: 200, overflowY: "auto", fontFamily: "'Fira Code', monospace", fontSize: 12, scrollbarWidth: "none" }}>
+                  <div ref={logsContainerRef} style={{ height: 200, overflowY: "auto", fontFamily: "'Fira Code', monospace", fontSize: 12, scrollbarWidth: "none" }}>
                     {liveLogs.length === 0 && <div style={{ color: "rgba(255,255,255,0.1)" }}>Waiting for pipeline signals...</div>}
                     {liveLogs.map((log, i) => (
                       <div key={i} style={{ color: log.includes("✓") ? "#22c55e" : log.includes("✗") ? "#ef4444" : "#888", marginBottom: 6, lineHeight: 1.5 }}>
                         {log}
                       </div>
                     ))}
-                    <div ref={logsEndRef} />
                   </div>
                 </div>
               </div>
