@@ -318,12 +318,13 @@ export function ExploreMarkets() {
   const [loading, setLoading]           = useState(true);
   const [polyLimit, setPolyLimit]       = useState(24);
 
-  // Kalshi
-  const [kalshiActiveCat, setKalshiActiveCat] = useState("trending"); // INDEPENDENT of Polymarket's activeCat
-  const [kalshiAll, setKalshiAll]             = useState<KalshiMarket[]>([]);
+  // Kalshi ── server-driven, mirrors Polymarket fetch pattern
+  const [kalshiActiveCat, setKalshiActiveCat] = useState("trending");
+  const [kalshiMarkets, setKalshiMarkets]     = useState<KalshiMarket[]>([]);
   const [kalshiLoading, setKalshiLoading]     = useState(false);
-  const [kalshiFetched, setKalshiFetched]     = useState(false);
-  const [kalshiLimit, setKalshiLimit]         = useState(24);
+  const [kalshiCursor, setKalshiCursor]       = useState("");   // cursor for Load More
+  const [kalshiHasMore, setKalshiHasMore]     = useState(false);
+  const [kalshiLoadingMore, setKalshiLoadingMore] = useState(false);
 
   // Selected market for modal (shared)
   const [selected, setSelected] = useState<PolyMarket | null>(null);
@@ -340,45 +341,49 @@ export function ExploreMarkets() {
       .finally(() => setLoading(false));
   }, [activeCat, searchQuery, polyLimit]);
 
-  // Reset limits on cat/search change
+  // Reset Polymarket limit on cat/search change
   useEffect(() => { setPolyLimit(24); }, [activeCat]);
   useEffect(() => { setPolyLimit(24); }, [searchQuery]);
-  useEffect(() => { setKalshiLimit(24); }, [kalshiActiveCat]);
 
-  // Fetch ALL Kalshi markets ONCE on component mount — stored in kalshiAll for client-side filtering
-  // We fetch eagerly (not waiting for tab click) so it's ready when user switches to Kalshi
+  // ── KALSHI: fresh fetch whenever category tab changes ────────────────────
   useEffect(() => {
-    if (kalshiFetched) return;
+    if (topTab !== "kalshi") return; // lazy: only fetch when tab is visible
+    setKalshiMarkets([]);
+    setKalshiCursor("");
+    setKalshiHasMore(false);
     setKalshiLoading(true);
-    fetch("/api/kalshi-markets")
+    fetch(`/api/kalshi-markets?category=${encodeURIComponent(kalshiActiveCat)}`)
       .then(r => r.json())
       .then(d => {
-        const loaded = d.markets || [];
-        setKalshiAll(loaded);
-        setKalshiFetched(true);
-        // Debug: log catKey distribution so we can verify filtering works
-        const dist: Record<string, number> = {};
-        loaded.forEach((m: any) => { dist[m.catKey] = (dist[m.catKey] ?? 0) + 1; });
-        console.log("[Kalshi] catKey dist:", dist);
+        setKalshiMarkets(d.markets || []);
+        setKalshiCursor(d.cursor || "");
+        setKalshiHasMore(d.hasMore ?? false);
       })
-      .catch(() => { setKalshiAll([]); setKalshiFetched(true); })
+      .catch(() => { setKalshiMarkets([]); setKalshiHasMore(false); })
       .finally(() => setKalshiLoading(false));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [kalshiActiveCat, topTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── KALSHI: append results on Load More ──────────────────────────────────
+  const loadMoreKalshi = () => {
+    if (!kalshiHasMore || kalshiLoadingMore) return;
+    setKalshiLoadingMore(true);
+    const params = new URLSearchParams({ category: kalshiActiveCat });
+    if (kalshiCursor) params.set("cursor", kalshiCursor);
+    fetch(`/api/kalshi-markets?${params}`)
+      .then(r => r.json())
+      .then(d => {
+        setKalshiMarkets(prev => [...prev, ...(d.markets || [])]);
+        setKalshiCursor(d.cursor || "");
+        setKalshiHasMore(d.hasMore ?? false);
+      })
+      .catch(() => setKalshiHasMore(false))
+      .finally(() => setKalshiLoadingMore(false));
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setSearchQuery(searchInput.trim());
   };
-
-  // Client-side filter Kalshi markets by their own catKey state (independent from Polymarket)
-  const kalshiFiltered = Array.from(kalshiActiveCat === "trending" 
-    ? kalshiAll 
-    : kalshiAll.filter(m => m.catKey === kalshiActiveCat))
-    .filter(m => !searchQuery || m.title.toLowerCase().includes(searchQuery.toLowerCase()))
-    .sort((a, b) => b.volumeRaw - a.volumeRaw);
-
-  const kalshiVisible = kalshiFiltered.slice(0, kalshiLimit);
-  const kalshiHasMore = kalshiFiltered.length > kalshiLimit;
 
   return (
     <>
@@ -542,14 +547,14 @@ export function ExploreMarkets() {
           <div style={{ background: "#0c0f16", border: "1px solid #1a1f2e", borderRadius: "0 12px 12px 12px", padding: "20px 20px 24px" }}>
             <CatTabs
               active={kalshiActiveCat}
-              onSelect={k => { setKalshiActiveCat(k); setKalshiLimit(24); }}
+              onSelect={k => setKalshiActiveCat(k)}
               accentColor="#22c55e"
               layoutId="kalshi-active-tab"
             />
 
             <div className="hide-mobile" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
               <div style={{ fontSize: 11, color: "#22c55e", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2 }}>
-                ◉ Kalshi — CFTC-regulated exchange · Click any card to analyse
+                ● Kalshi — CFTC-regulated exchange · Click any card to analyse
               </div>
               <a href="https://kalshi.com" target="_blank" rel="noopener noreferrer"
                 style={{ fontSize: 12, color: "#8a94a6", display: "flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
@@ -564,25 +569,19 @@ export function ExploreMarkets() {
                 </motion.div>
                 <span style={{ fontSize: 13, color: "#8a94a6", fontWeight: 600 }}>Loading Kalshi markets…</span>
               </div>
-            ) : kalshiVisible.length === 0 ? (
+            ) : kalshiMarkets.length === 0 ? (
               <div style={{ textAlign: "center", padding: "48px 0", color: "#8a94a6", fontSize: 13 }}>
-                <div style={{ marginBottom: 10 }}>
-                  {kalshiAll.length === 0
-                    ? "Could not load Kalshi markets. Try refreshing."
-                    : `No markets in this category (${kalshiAll.length} total loaded — try Trending or another tab)`}
-                </div>
-                {kalshiAll.length > 0 && (
-                  <button
-                    onClick={() => setKalshiActiveCat("trending")}
-                    style={{ fontSize: 12, color: "#22c55e", background: "transparent", border: "1px solid #22c55e",
-                      borderRadius: 8, padding: "6px 16px", cursor: "pointer", fontWeight: 700 }}>
-                    Show all {kalshiAll.length} markets →
-                  </button>
-                )}
+                <div style={{ marginBottom: 10 }}>Could not load Kalshi markets for this category. Try refreshing.</div>
+                <button
+                  onClick={() => setKalshiActiveCat("trending")}
+                  style={{ fontSize: 12, color: "#22c55e", background: "transparent", border: "1px solid #22c55e",
+                    borderRadius: 8, padding: "6px 16px", cursor: "pointer", fontWeight: 700 }}>
+                  Show Trending →
+                </button>
               </div>
             ) : (
               <div className="markets-grid">
-                {kalshiVisible.map(m => (
+                {kalshiMarkets.map(m => (
                   <KalshiCard key={m.id} m={m} onClick={() => setSelected(kalshiToPolyMarket(m))} />
                 ))}
               </div>
@@ -592,11 +591,13 @@ export function ExploreMarkets() {
               <div style={{ textAlign: "center", marginTop: 28 }}>
                 <motion.button
                   whileHover={{ scale: 1.02, borderColor: "#22c55e" }} whileTap={{ scale: 0.98 }}
-                  onClick={() => setKalshiLimit(p => p + 24)}
+                  onClick={loadMoreKalshi}
+                  disabled={kalshiLoadingMore}
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 28px",
                     borderRadius: 12, border: "1px solid #1f2330", background: "#0c0f16",
-                    color: "#22c55e", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                  Load More <ExternalLink size={14} />
+                    color: "#22c55e", fontSize: 13, fontWeight: 700,
+                    cursor: kalshiLoadingMore ? "default" : "pointer", opacity: kalshiLoadingMore ? 0.6 : 1 }}>
+                  {kalshiLoadingMore ? <><Loader2 size={14} />&nbsp;Loading…</> : <>Load More <ExternalLink size={14} /></>}
                 </motion.button>
               </div>
             )}
