@@ -131,7 +131,27 @@ function MirofishTerminalContent() {
     if (!raw) return;
     try {
       const saved = JSON.parse(raw);
-      if (saved.phase !== "running" || !saved.miroProjectId) return;
+      if (saved.phase !== "running" || !saved.miroProjectId) {
+        sessionStorage.removeItem(SESSION_KEY); // clean up invalid state
+        return;
+      }
+
+      // ── Safety check: verify the simulation isn't already completed in the DB.
+      // If it is, clear the stale session and redirect to results — don't re-run.
+      (async () => {
+        try {
+          const res = await fetch(`/api/custom-simulations`);
+          const data = await res.json();
+          const existing = (data.simulations || []).find((s: any) => s.id === saved.miroProjectId);
+          if (existing?.status === "completed") {
+            sessionStorage.removeItem(SESSION_KEY);
+            router.push(`/simulate/mirofish/${saved.miroProjectId}`);
+            return;
+          }
+        } catch {
+          // If the check fails, fall through to reconnect as normal
+        }
+      })();
 
       // Restore state
       setPhase("running");
@@ -455,6 +475,8 @@ function MirofishTerminalContent() {
             updateStep(3, "done", getT());
             updateStep(4, "done", getT());
             addLog(`✓ Simulation complete! Redirecting...`);
+            // Clear session BEFORE redirect so revisiting the page doesn't re-run the simulation
+            sessionStorage.removeItem(SESSION_KEY);
             router.push(`/simulate/mirofish/${simDbId}`);
           }
         } catch (err) {
