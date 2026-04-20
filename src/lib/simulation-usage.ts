@@ -1,18 +1,21 @@
 import { createClient as createSupabaseAdmin } from "@supabase/supabase-js"
 
-// Every tier name that can be stored in the profiles table
+// ── Tier Daily Limits ──────────────────────────────────────────────────────────
+// IMPORTANT: These must match what is stored in profiles.tier by the Dodo webhook
 const DAILY_LIMITS: Record<string, number> = {
-  free:    2,
-  normal:  2,
-  pro:     50,
-  premium: 50,  // alias for pro
-  founder: 200,
+  free:         2,   // unregistered / default
+  normal:       2,   // default authenticated user
+  starter:      10,  // bought starter pack
+  pro:          50,  // Pro tier
+  premium:      50,  // alias for pro (legacy)
+  founder:      999, // unlimited effectively
 }
 
 // Friendly display names for error messages
 const TIER_LABELS: Record<string, string> = {
   free:    "Free",
   normal:  "Free",
+  starter: "Starter",
   pro:     "Pro",
   premium: "Pro",
   founder: "Founder",
@@ -33,16 +36,29 @@ export async function checkSimulationLimit(userId: string): Promise<{ allowed: b
   const supa = getSupaAdmin()
   if (!supa) return { allowed: false, reason: "Database not configured" }
 
-  // Get tier
-  const { data: profile } = await supa
+  // Get tier AND has_starter_pack together
+  // IMPORTANT: only select columns that actually exist in the profiles table schema
+  const { data: profile, error: profileError } = await supa
     .from("profiles")
-    .select("tier, simulations_today, last_sim_date")
+    .select("tier, has_starter_pack")
     .eq("id", userId)
     .single()
 
-  const tier = (profile?.tier || "normal").toLowerCase()
+  if (profileError) {
+    console.error("[checkSimulationLimit] Failed to fetch profile:", profileError.message)
+  }
+
+  let tier = (profile?.tier || "normal").toLowerCase()
+  const hasStarterPack = profile?.has_starter_pack === true
+
+  // If user has no paid tier but bought starter pack, treat them as starter
+  if (hasStarterPack && (tier === "normal" || tier === "free")) {
+    tier = "starter"
+  }
+
   const limit = DAILY_LIMITS[tier] ?? 2  // unknown tier → safe default of 2
   const tierLabel = TIER_LABELS[tier] ?? "Free"
+  const isPaidTier = tier === "pro" || tier === "premium" || tier === "founder" || tier === "starter"
 
   // Compute today's usage from the simulations tables (source of truth)
   const startOfDay = new Date()
@@ -59,12 +75,11 @@ export async function checkSimulationLimit(userId: string): Promise<{ allowed: b
   const usageToday = (mktCount ?? 0) + (customCount ?? 0)
 
   if (usageToday >= limit) {
-    const isFree = tier === "normal" || tier === "free"
     return {
       allowed: false,
-      reason: isFree
-        ? `Daily limit reached (${limit}/day on Free plan). Upgrade to Pro for 50 simulations per day.`
-        : `Daily limit reached (${usageToday}/${limit} today on ${tierLabel} plan). Your limit resets at midnight UTC.`,
+      reason: isPaidTier
+        ? `__PAID_LIMIT_REACHED__:${usageToday}/${limit} simulations used today on your ${tierLabel} plan. Your quota resets at midnight UTC.`
+        : `__FREE_LIMIT_REACHED__:You've used ${usageToday}/${limit} free simulations today. Upgrade to Pro for 50/day.`,
       usageToday,
       limit,
     }
@@ -72,6 +87,7 @@ export async function checkSimulationLimit(userId: string): Promise<{ allowed: b
 
   return { allowed: true, usageToday, limit }
 }
+
 
 /**
  * Increment lifetime simulation counter in profiles table.

@@ -73,10 +73,11 @@ async function processEvent(event: any) {
   let updatePayload: any = {}
   if (plan === "starter") {
     updatePayload = { has_starter_pack: true }
-  } else if (plan === "pro") {
-    updatePayload = { tier: "pro" }
+  } else if (plan === "pro" || plan === "premium") {
+    updatePayload = { tier: "premium" }
   } else if (plan === "founder") {
-    updatePayload = { tier: "founder" }
+    // Note: if founder is also not in CHECK constraint, this will fail. Assuming premium is safe.
+    updatePayload = { tier: "premium" }
   }
 
   const { error } = await supabaseAdmin

@@ -51,7 +51,6 @@ const PLANS = [
 export default function ProfilePage() {
   const [user, setUser] = useState<any>(null)
   const [profile, setProfile] = useState<any>(null)
-  const [usageToday, setUsageToday] = useState(0)
   const [totalSims, setTotalSims] = useState(0)
   const [loading, setLoading] = useState(true)
   const [isUpgrading, setIsUpgrading] = useState(false)
@@ -72,19 +71,6 @@ export default function ProfilePage() {
         .eq("id", user.id)
         .single()
       setProfile(profileData)
-
-      // Today's usage from BOTH tables
-      const startOfDay = new Date()
-      startOfDay.setUTCHours(0, 0, 0, 0)
-      const isoToday = startOfDay.toISOString()
-
-      const [{ count: mktToday }, { count: customToday }] = await Promise.all([
-        supabase.from("simulations").select("*", { count: "exact", head: true })
-          .eq("user_id", user.id).gte("created_at", isoToday),
-        supabase.from("custom_simulations").select("*", { count: "exact", head: true })
-          .eq("user_id", user.id).gte("created_at", isoToday),
-      ])
-      setUsageToday((mktToday ?? 0) + (customToday ?? 0))
       setTotalSims(profileData?.simulations_run ?? 0)
       setLoading(false)
     }
@@ -120,15 +106,14 @@ export default function ProfilePage() {
   }
 
   const isPremium = profile?.tier === "pro" || profile?.tier === "founder" || profile?.tier === "premium"
-  const limit = profile?.tier === "founder" ? 200 : isPremium ? 50 : 2
   const hasStarterPack = profile?.has_starter_pack === true
-  const usedPct = Math.min((usageToday / limit) * 100, 100)
   const memberSince = profile?.created_at
     ? new Date(profile.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long" })
     : "—"
   const initials = user?.user_metadata?.full_name
     ? user.user_metadata.full_name.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()
     : "U"
+  const planLabel = profile?.tier === "founder" ? "Founder" : isPremium ? "Pro" : hasStarterPack ? "Starter" : "Free"
 
   if (loading) {
     return (
@@ -181,47 +166,37 @@ export default function ProfilePage() {
         </motion.div>
 
         {/* ── STATS ROW ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 24 }}>
 
-          {/* Today's Usage */}
+          {/* Total Simulations */}
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
             style={{ background: "#0a0a0a", border: "1px solid #1a1a1a", borderRadius: 14, padding: 28 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "#444", marginBottom: 16 }}>Today's Usage</div>
-            <div style={{ fontSize: 48, fontWeight: 800, fontFamily: "'Space Grotesk', sans-serif", lineHeight: 1 }}>
-              {usageToday}
-              <span style={{ fontSize: 20, color: "#333", fontWeight: 400 }}> / {limit}</span>
-            </div>
-            <div style={{ fontSize: 12, color: "#444", marginTop: 6, marginBottom: 16 }}>simulations run today</div>
-            <div style={{ height: 4, background: "#111", borderRadius: 2, overflow: "hidden" }}>
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${usedPct}%` }}
-                transition={{ duration: 0.8, ease: "easeOut", delay: 0.3 }}
-                style={{ height: "100%", borderRadius: 2, background: usedPct >= 100 ? "#ef4444" : "#fff" }}
-              />
-            </div>
-            <div style={{ fontSize: 11, color: usedPct >= 100 ? "#ef4444" : "#333", marginTop: 8 }}>
-              {usedPct >= 100 ? "Daily limit reached" : `${limit - usageToday} remaining`}
-            </div>
-          </motion.div>
-
-          {/* Lifetime Simulations */}
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-            style={{ background: "#0a0a0a", border: "1px solid #1a1a1a", borderRadius: 14, padding: 28 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "#444", marginBottom: 16 }}>All-time</div>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "#444", marginBottom: 16 }}>Total Simulations</div>
             <div style={{ fontSize: 48, fontWeight: 800, fontFamily: "'Space Grotesk', sans-serif", lineHeight: 1 }}>
               {totalSims}
             </div>
-            <div style={{ fontSize: 12, color: "#444", marginTop: 6, marginBottom: 16 }}>total simulations run</div>
-            <div style={{ display: "flex", gap: 24, marginTop: 8 }}>
+            <div style={{ fontSize: 12, color: "#444", marginTop: 6 }}>simulations run all-time</div>
+          </motion.div>
+
+          {/* Plan Details */}
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+            style={{ background: "#0a0a0a", border: "1px solid #1a1a1a", borderRadius: 14, padding: 28 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "#444", marginBottom: 16 }}>Your Plan</div>
+            <div style={{ fontSize: 32, fontWeight: 800, fontFamily: "'Space Grotesk', sans-serif", lineHeight: 1 }}>
+              {planLabel}
+            </div>
+            <div style={{ fontSize: 12, color: "#555", marginTop: 6 }}>active plan</div>
+            <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
               <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{isPremium ? "10" : "2"}</div>
-                <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>daily limit</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{isPremium ? "All" : "Standard"}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: isPremium ? "#fff" : "#666" }}>{isPremium ? "All" : "Standard"}</div>
                 <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>parameters</div>
               </div>
+              {hasStarterPack && (
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "#a78bfa" }}>✓</div>
+                  <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>starter pack</div>
+                </div>
+              )}
             </div>
           </motion.div>
         </div>

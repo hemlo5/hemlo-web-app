@@ -265,15 +265,26 @@ function MirofishTerminalContent() {
     setScenario(DOMAIN_EXAMPLES[id] || "");
   };
 
-  const handleGenerateSeed = async (scenarioOverride?: string): Promise<boolean> => {
+  const handleGenerateSeed = async (scenarioOverride?: string, onStep?: (msg: string) => void): Promise<boolean> => {
     const q = scenarioOverride || scenario;
     if (!q) return false;
     setIsGeneratingSeed(true);
     setSeedError("");
     try {
-      const res = await fetch("/api/generate-seed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenario: q }) });
+      // Show RAG pipeline steps in the UI
+      onStep?.("🔍 Step 1/3 — Optimizing search query with AI...");
+      const res = await fetch("/api/generate-seed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenario: q })
+      });
       const data = await res.json();
-      console.log("[generate-seed] response:", { ok: res.ok, status: res.status, hasSeed: !!data.seed, error: data.error, provider: data.provider });
+      console.log("[generate-seed] RAG pipeline result:", {
+        ok: res.ok, status: res.status,
+        hasSeed: !!data.seed, error: data.error,
+        provider: data.provider, searchQuery: data.searchQuery,
+        tavilySuccess: data.tavilySuccess,
+      });
       if (data.seed) {
         seedRef.current = data.seed;
         setSeed(data.seed);
@@ -339,14 +350,40 @@ function MirofishTerminalContent() {
       return;
     }
 
-    // ── Step 2: Generate reality seed if auto mode
+    // ── Step 1.5: Silent pre-flight limit check (overlay stays alive — error shows inside it)
+    try {
+      const usageRes = await fetch("/api/usage");
+      if (usageRes.ok) {
+        const usageData = await usageRes.json();
+        if (usageData.usageToday >= usageData.limit) {
+          const isPaid = usageData.tier === "pro" || usageData.tier === "premium" || usageData.tier === "founder" || usageData.tier === "starter";
+          setLaunchError(isPaid
+            ? `__PAID_LIMIT_REACHED__:${usageData.usageToday}/${usageData.limit} simulations used today on your ${usageData.tier} plan. Your quota resets at midnight UTC.`
+            : `__FREE_LIMIT_REACHED__:You've used ${usageData.usageToday}/${usageData.limit} free simulations today. Upgrade to Pro for 50/day.`
+          );
+          // NOTE: do NOT call setIsLaunching(false) here — React batches state and the overlay
+          // would disappear before the error renders. The overlay stays open; user dismisses it.
+          setPhase("idle");
+          return;
+        }
+      }
+    } catch {
+      // Ignore — DB save will catch the limit server-side too
+    }
+
+    // ── Step 2: Generate reality seed if auto mode (RAG pipeline)
     if (seedMode === "auto") {
-      setLaunchStep("Generating reality seed...");
-      const genSuccess = await handleGenerateSeed(scenario);
+      setLaunchStep("🔍 Step 1/3 — Generating optimized search query...");
+      // Small delay so the user sees the first step message
+      await new Promise(r => setTimeout(r, 400));
+      setLaunchStep("🌐 Step 2/3 — Deep-searching the internet (Tavily)...");
+      const genSuccess = await handleGenerateSeed(scenario, (msg) => setLaunchStep(msg));
       if (!genSuccess) {
         setLaunchError(seedError || "Failed to generate reality seed. Please try again.");
         return;
       }
+      setLaunchStep("✅ Reality seed grounded in real-time data. Launching simulation...");
+      await new Promise(r => setTimeout(r, 500));
     }
 
     // ── Step 3: Transition UI to running state
@@ -375,7 +412,13 @@ function MirofishTerminalContent() {
         return;
       }
       if (dbRes.status === 429) {
-        setLaunchError(dbData.error || "Daily limit reached. Please upgrade to run more simulations.");
+        const rawErr = dbData.error || "";
+        const isPaidLimit = rawErr.startsWith("__PAID_LIMIT_REACHED__");
+        const errBody = rawErr.replace(/^__(?:PAID|FREE)_LIMIT_REACHED__:/, "");
+        setLaunchError(isPaidLimit
+          ? `__PAID_LIMIT_REACHED__:${errBody}`
+          : `__FREE_LIMIT_REACHED__:${errBody}`
+        );
         setPhase("idle");
         return;
       }
@@ -625,42 +668,61 @@ function MirofishTerminalContent() {
                 animate={{ opacity: 1, y: 0 }}
                 style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 20 }}
               >
+                {/* Icon */}
                 <div style={{
-                  width: 64, height: 64, borderRadius: "50%",
-                  background: launchError.includes("limit") ? "rgba(255,107,0,0.15)" : "rgba(239,68,68,0.15)", border: launchError.includes("limit") ? "1px solid rgba(255,107,0,0.4)" : "1px solid rgba(239,68,68,0.4)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 28,
+                  width: 72, height: 72, borderRadius: "50%",
+                  background: launchError.startsWith("__PAID") ? "rgba(99,102,241,0.15)" : launchError.startsWith("__FREE") ? "rgba(255,107,0,0.15)" : "rgba(239,68,68,0.15)",
+                  border: launchError.startsWith("__PAID") ? "1px solid rgba(99,102,241,0.4)" : launchError.startsWith("__FREE") ? "1px solid rgba(255,107,0,0.4)" : "1px solid rgba(239,68,68,0.4)",
+                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30,
                 }}>
-                  {launchError.includes("limit") ? "⚡" : "✕"}
+                  {launchError.startsWith("__PAID") ? "📦" : launchError.startsWith("__FREE") ? "⚡" : "✗"}
                 </div>
+
+                {/* Title + Message */}
                 <div>
-                  <div style={{ fontSize: 17, fontWeight: 800, color: "#fff", marginBottom: 8 }}>
-                    {launchError.includes("limit") ? "Daily Limit Reached" : "Launch Failed"}
+                  <div style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 8 }}>
+                    {launchError.startsWith("__PAID") ? "Daily Quota Used" : launchError.startsWith("__FREE") ? "Upgrade Required" : "Launch Failed"}
                   </div>
-                  <div style={{ fontSize: 13, color: "#999", maxWidth: 320 }}>{launchError}</div>
+                  <div style={{ fontSize: 13, color: "#aaa", maxWidth: 340, lineHeight: 1.6 }}>
+                    {launchError.replace(/^__(?:PAID|FREE)_LIMIT_REACHED__:/, "")}
+                  </div>
                 </div>
-                {launchError.includes("limit") ? (
+
+                {/* CTAs */}
+                {launchError.startsWith("__PAID") ? (
+                  // Paid user — just dismiss, quota resets at midnight
+                  <button
+                    onClick={() => { setIsLaunching(false); setLaunchError(null); }}
+                    style={{
+                      padding: "10px 32px", borderRadius: 8, background: "rgba(99,102,241,0.2)",
+                      border: "1px solid rgba(99,102,241,0.5)", color: "#a5b4fc", fontSize: 13,
+                      fontWeight: 700, cursor: "pointer",
+                    }}
+                  >
+                    Got it — Come back tomorrow
+                  </button>
+                ) : launchError.startsWith("__FREE") ? (
+                  // Free user — push to pricing
                   <div style={{ display: "flex", gap: 12 }}>
                     <button
                       onClick={() => { setIsLaunching(false); setLaunchError(null); }}
                       style={{
                         padding: "10px 24px", borderRadius: 8, background: "transparent",
-                        border: "1px solid rgba(255,255,255,0.2)", color: "#ccc", fontSize: 13, cursor: "pointer",
+                        border: "1px solid rgba(255,255,255,0.18)", color: "#888", fontSize: 13, cursor: "pointer",
                       }}
-                    >
-                      Cancel
-                    </button>
+                    >Cancel</button>
                     <button
                       onClick={() => router.push("/pricing")}
                       style={{
-                        padding: "10px 24px", borderRadius: 8, background: "#FF6B00",
-                        border: "none", color: "#000", fontSize: 13, fontWeight: "bold", cursor: "pointer",
+                        padding: "10px 28px", borderRadius: 8,
+                        background: "linear-gradient(135deg, #FF6B00, #FF3D00)",
+                        border: "none", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer",
+                        boxShadow: "0 4px 20px rgba(255,107,0,0.35)",
                       }}
-                    >
-                      Upgrade to Premium
-                    </button>
+                    >⚡ Upgrade to Pro</button>
                   </div>
                 ) : (
+                  // Generic error
                   <button
                     onClick={() => { setIsLaunching(false); setLaunchError(null); }}
                     style={{
@@ -668,9 +730,7 @@ function MirofishTerminalContent() {
                       border: "1px solid rgba(255,255,255,0.15)", color: "#fff", fontSize: 13,
                       fontWeight: 700, cursor: "pointer",
                     }}
-                  >
-                    Dismiss & Retry
-                  </button>
+                  >Dismiss & Retry</button>
                 )}
               </motion.div>
             ) : (
