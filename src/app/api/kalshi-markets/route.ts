@@ -172,18 +172,8 @@ async function buildCard(event: any, markets: any[]): Promise<MarketCard> {
   };
 }
 
-// Fetch markets for one event
-async function fetchEventMarkets(ticker: string): Promise<any[]> {
-  try {
-    const r = await fetch(`${KALSHI_BASE}/markets?event_ticker=${ticker}&limit=100`, {
-      headers: { Accept: "application/json" },
-      next: { revalidate: 30 },
-      signal: AbortSignal.timeout(5000),
-    });
-    const d = await r.json();
-    return d.markets ?? [];
-  } catch { return []; }
-}
+// We now use `with_nested_markets=true` to get markets inside the events payload.
+// This completely removes the need for `fetchEventMarkets` N+1 calls.
 
 // ── MAIN ──────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
@@ -192,16 +182,22 @@ export async function GET(req: NextRequest) {
     const category = searchParams.get("category") ?? "trending"; // catKey from frontend
     const cursor   = searchParams.get("cursor") ?? "";           // Kalshi pagination cursor
 
-    // ── Page through Kalshi events until we have PAGE_SIZE matching this category ──
-    const collected: MarketCard[] = [];
-    let nextCursor = cursor;
-    let hasMore    = false;
-    const MAX_DISCOVERY_PAGES = 5; // safety cap: 5 × 200 = 1000 events max
+    const isTrending = category === "trending";
+    let trendingOffset = isTrending ? parseInt(cursor || "0", 10) : 0;
+
+    // ── Page through Kalshi events ──
+    let collected: MarketCard[] = [];
+    let nextCursor = isTrending ? "" : cursor; // Trending starts from scratch, slice later
+    let hasMore = false;
+    
+    // For trending, we pull 3 pages (600 events) for a deep volume pool. For others, we stop early.
+    const MAX_DISCOVERY_PAGES = isTrending ? 3 : 5;
 
     for (let page = 0; page < MAX_DISCOVERY_PAGES; page++) {
       const url = new URL(`${KALSHI_BASE}/events`);
       url.searchParams.set("limit", "200");
       url.searchParams.set("status", "open");
+      url.searchParams.set("with_nested_markets", "true"); // CRITICAL: Fetch markets inline!
       if (nextCursor) url.searchParams.set("cursor", nextCursor);
 
       const evRes = await fetch(url.toString(), {
@@ -215,40 +211,56 @@ export async function GET(req: NextRequest) {
       const events: any[] = body.events ?? [];
       nextCursor = body.cursor ?? "";
 
-      // Filter events for the requested category (client-side since Kalshi has no server filter)
-      const matching = category === "trending"
-        ? events // trending = all; volume sort later
+      const matching = isTrending
+        ? events
         : events.filter((ev) => (CAT_TO_KEY[ev.category ?? "World"] ?? "trending") === category);
 
-      // Fetch market details for matching events in parallel batches of 10
-      const BATCH = 10;
-      for (let i = 0; i < matching.length; i += BATCH) {
-        const chunk = matching.slice(i, i + BATCH);
-        const results = await Promise.all(
-          chunk.map(async (ev) => {
-            const mkts = await fetchEventMarkets(ev.event_ticker);
-            if (mkts.length === 0) return null;
-            return buildCard(ev, mkts);
-          })
-        );
-        for (const card of results) {
-          if (card) collected.push(card);
-          if (collected.length >= PAGE_SIZE + 1) break; // +1 to detect hasMore
-        }
-        if (collected.length >= PAGE_SIZE + 1) break;
+      // Build cards synchronously since markets are already nested inline
+      const results = await Promise.all(
+        matching.map(async (ev) => {
+          const mkts = ev.markets ?? []; // provided by with_nested_markets
+          if (mkts.length === 0) return null;
+          return buildCard(ev, mkts);
+        })
+      );
+
+      for (const card of results) {
+        if (card) collected.push(card);
       }
 
-      // If we have enough OR Kalshi has no more pages, stop
-      if (collected.length >= PAGE_SIZE + 1 || !nextCursor) break;
+      // If we are NOT trending, and we have enough items, we can stop early
+      if (!isTrending && collected.length >= PAGE_SIZE + 1) break;
+      
+      // If Kalshi has no more events, stop
+      if (!nextCursor) break;
     }
 
-    // Sort trending by volume
-    if (category === "trending") {
+    // Sort & Paginate
+    let returnCursor = nextCursor; // Native Kalshi cursor for standard categories
+
+    if (isTrending) {
+      // Sort the massive pool of events globally by volume
       collected.sort((a, b) => b.volumeRaw - a.volumeRaw);
+      
+      // Keep only the slice requested by the frontend
+      const slice = collected.slice(trendingOffset, trendingOffset + PAGE_SIZE + 1);
+      hasMore = slice.length > PAGE_SIZE;
+      
+      if (hasMore) {
+        returnCursor = (trendingOffset + PAGE_SIZE).toString();
+      } else {
+        returnCursor = "";
+      }
+      
+      collected = slice.slice(0, PAGE_SIZE);
+    } else {
+      // Standard category: we stop early, so just slice what we have
+      hasMore = collected.length > PAGE_SIZE;
+      if (!hasMore) returnCursor = ""; // End reached
+      collected = collected.slice(0, PAGE_SIZE);
     }
 
-    hasMore = collected.length > PAGE_SIZE;
-    const markets = collected.slice(0, PAGE_SIZE);
+    const markets = collected;
 
     // Log for debugging
     console.log(`[kalshi-markets] category=${category} returned=${markets.length} hasMore=${hasMore}`);
