@@ -51,6 +51,7 @@ type TavilyResult = {
   title: string
   url: string
   content: string
+  raw_content?: string
   score: number
   published_date?: string
 }
