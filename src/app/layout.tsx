@@ -3,15 +3,15 @@ import { GoogleAnalytics } from "@next/third-parties/google"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "HEMLO — Simulate Reality. Before You Live It.",
-  description: "HEMLO predicts how humans react to anything — trades, ideas, tweets, world events. Run the simulation before you commit.",
-  keywords: ["AI simulation", "prediction", "sentiment analysis", "future simulation", "market prediction"],
+  title: "HEMLO AI",
+  description: "Advanced multi-agent AI simulation platform for trades, ideas, and world events.",
+  keywords: ["AI simulation", "prediction", "sentiment analysis", "market prediction"],
   icons: {
     icon: "/favicon.png",
   },
   openGraph: {
-    title: "HEMLO — Simulate Reality. Before You Live It.",
-    description: "Predict how humans react to anything using multi-agent AI simulation.",
+    title: "HEMLO AI",
+    description: "Multi-agent AI simulation platform.",
     type: "website",
     url: "https://app.hemloai.com",
     siteName: "Hemlo AI",
