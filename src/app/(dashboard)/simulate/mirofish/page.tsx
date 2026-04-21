@@ -1080,7 +1080,7 @@ function MirofishTerminalContent() {
           </>
         ) : (
           <div style={{ padding: "clamp(20px, 5vw, 40px)", flex: 1, backgroundColor: "#000000" }}>
-            <div style={{ maxWidth: 1400, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 340px", gap: 32 }}>
+            <div className="resp-grid-2" style={{ maxWidth: 1400, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 340px", gap: 32 }}>
               
               {/* Main Column: Graph & Logs */}
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
