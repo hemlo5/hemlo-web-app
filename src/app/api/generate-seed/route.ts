@@ -16,12 +16,17 @@ async function generateSearchQuery(scenario: string): Promise<string> {
   const systemPrompt = `You are a search query optimization expert working for a financial and geopolitical intelligence firm.
 Your job is to convert a user's simulation scenario into a single, highly-optimized search engine query.
 
-Rules:
-- Output ONLY the search query string — no explanation, no quotes, no punctuation at the end
-- Make it specific: include key entities (companies, countries, people), event types, and timeframes
-- Target recent, factual, data-rich news articles
-- Keep it under 20 words
-- Optimize for retrieving real statistics, market data, and official statements`
+CRITICAL RULES — DO NOT BREAK ANY OF THESE:
+1. Output ONLY the search query string — no explanation, no quotes, no punctuation at the end
+2. STRICTLY FORBIDDEN: You MUST NOT include any specific years, months, or dates in the query.
+   - Do NOT write: 2020, 2021, 2022, 2023, 2024, 2025, 2026, or any year
+   - Do NOT write: January, February, March, April, May, June, July, August, September, October, November, December, or any month name
+   - Do NOT write: Q1, Q2, Q3, Q4
+   - The query must be 100% date-agnostic so the search engine returns the freshest content
+3. REQUIRED: You MUST end every query with the exact phrase 'most recent news and data'
+4. Make it specific: include key entities (companies, countries, people) and event types
+5. Keep it under 20 words (not counting the required ending phrase)
+6. Optimize for retrieving real statistics, market data, and official statements`
 
   const res = await fetch(`${SF_BASE()}/chat/completions`, {
     method: "POST",
@@ -30,18 +35,34 @@ Rules:
       model: SF_MODEL(),
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: `Simulation scenario: "${scenario}"\n\nGenerate the optimal search query:` }
+        { role: "user", content: `Simulation scenario: "${scenario}"\n\nGenerate the optimal search query (remember: NO dates/years, MUST end with 'most recent news and data'):` }
       ],
       temperature: 0.3,
-      max_tokens: 100,
+      max_tokens: 120,
     }),
     signal: AbortSignal.timeout(20000),
   })
 
   if (!res.ok) throw new Error(`Query gen failed: ${res.status}`)
   const data = await res.json()
-  const query = (data?.choices?.[0]?.message?.content ?? "").trim()
+  let query = (data?.choices?.[0]?.message?.content ?? "").trim()
   if (!query) throw new Error("Query generator returned empty result")
+
+  // ── Safety net: strip any years (4-digit 19xx/20xx) and month names that slipped through
+  const MONTHS = ["january","february","march","april","may","june","july","august","september","october","november","december"]
+  const monthRegex = new RegExp(`\\b(${MONTHS.join("|")})\\b`, "gi")
+  query = query
+    .replace(/\b(19|20)\d{2}\b/g, "")   // strip years like 2024, 2025
+    .replace(/\bQ[1-4]\b/gi, "")         // strip Q1, Q2, Q3, Q4
+    .replace(monthRegex, "")              // strip month names
+    .replace(/\s{2,}/g, " ")             // collapse extra spaces
+    .trim()
+
+  // ── Guarantee the closing phrase is always present
+  if (!query.toLowerCase().includes("most recent")) {
+    query = query.replace(/[.,;]$/, "").trim() + " most recent news and data"
+  }
+
   return query
 }
 
@@ -56,7 +77,7 @@ type TavilyResult = {
   published_date?: string
 }
 
-async function tavilyDeepSearch(query: string): Promise<string> {
+async function tavilyDeepSearch(query: string): Promise<{ contextBlock: string; sourcesSummary: string }> {
   const apiKey = TAV_KEY()
   if (!apiKey) throw new Error("TAVILY_API_KEY not configured")
 
@@ -109,7 +130,14 @@ async function tavilyDeepSearch(query: string): Promise<string> {
   console.log(
     `[generate-seed] Tavily: ${results.length} results, ~${contextBlock.length} chars of context`
   )
-  return contextBlock
+
+  // Summarise the results list in a human-readable form for the frontend
+  const sourcesSummary = results.map((r, i) => {
+    const date = r.published_date ? ` (${r.published_date})` : ""
+    return `Source ${i + 1}${date}: ${r.title}\nURL: ${r.url}\nSnippet: ${(r.content || "").slice(0, 300)}`
+  }).join("\n\n")
+
+  return { contextBlock, sourcesSummary }
 }
 
 // ── STEP 3: GROUNDED REALITY SEED GENERATION ──────────────────────────────────
@@ -241,10 +269,13 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Step 2: Tavily deep web scrape ───────────────────────────────────────
-    let newsContext: string
+    let newsContext = ""
+    let tavilySourcesSummary = ""  // human-readable source list for the frontend
     let tavilySuccess = false
     try {
-      newsContext = await tavilyDeepSearch(searchQuery)
+      const tavilyResult = await tavilyDeepSearch(searchQuery)
+      newsContext = tavilyResult.contextBlock
+      tavilySourcesSummary = tavilyResult.sourcesSummary
       tavilySuccess = true
       console.log(`[generate-seed] Step 2 ✓ Tavily returned ${newsContext.length} chars`)
     } catch (err: any) {
@@ -308,6 +339,7 @@ export async function POST(req: NextRequest) {
       seed,
       provider: usedProvider,
       searchQuery: searchQuery ?? scenario,
+      tavilyContext: tavilySourcesSummary || "",  // human-readable source list for display
       tavilySuccess,
     })
   } catch (error: any) {

@@ -13,6 +13,9 @@ export default function SimulationResultPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [openRaw, setOpenRaw] = useState(false);
+  const [openIntel, setOpenIntel] = useState(true); // open by default
+  const [ragQuery, setRagQuery] = useState("");
+  const [ragContext, setRagContext] = useState("");
   const [openRounds, setOpenRounds] = useState<Record<number, boolean>>(() => {
     return { 0: true }; // open first round by default
   });
@@ -38,6 +41,16 @@ export default function SimulationResultPage() {
       })
       .catch(() => setLoading(false));
   }, [simId]);
+
+  // Read Tavily RAG intel from sessionStorage (written by mirofish/page.tsx during seed generation)
+  useEffect(() => {
+    try {
+      const q = sessionStorage.getItem("hemlo_rag_query") || "";
+      const ctx = sessionStorage.getItem("hemlo_rag_context") || "";
+      if (q) setRagQuery(q);
+      if (ctx) setRagContext(ctx);
+    } catch {}
+  }, []);
 
   // Auto-generate verdict when data loads
   useEffect(() => {
@@ -329,6 +342,38 @@ export default function SimulationResultPage() {
                 {data.reality_seed || "No conditional parameters provided."}
               </pre>
             </div>
+          </div>
+
+          {/* Intelligence Sources (Tavily RAG) */}
+          <div>
+            <div
+              onClick={() => setOpenIntel(v => !v)}
+              className="mono-text"
+              style={{ display: "flex", alignItems: "center", gap: 8, color: openIntel ? "#fff" : "#aaa", fontSize: 11, letterSpacing: 1, textTransform: "uppercase", marginBottom: 16, cursor: "pointer", transition: "color 0.2s", userSelect: "none" }}
+            >
+              {openIntel ? <ChevronDown size={14} color="#fff" /> : <ChevronRight size={14} color="#666" />}
+              {`// RAG Intelligence Trace`}
+            </div>
+            {openIntel && (
+              <div className="glass-panel-bw" style={{ padding: 0, overflow: "hidden" }}>
+                {/* AI Search Query */}
+                <div style={{ padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div className="mono-text" style={{ fontSize: 9, color: "#555", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8 }}>AI → Tavily Search Query</div>
+                  <div style={{ fontFamily: "'Roboto Mono', monospace", fontSize: 13, color: "#e5e5e5", fontWeight: 700, padding: "10px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", wordBreak: "break-word" }}>
+                    {ragQuery || <span style={{ color: "#444", fontWeight: 400 }}>Not captured for this simulation (run a new one to see the query).</span>}
+                  </div>
+                </div>
+                {/* Tavily Sources */}
+                <div style={{ padding: "16px 20px", maxHeight: 320, overflowY: "auto" }}>
+                  <div className="mono-text" style={{ fontSize: 9, color: "#555", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 12 }}>Tavily → Sources Retrieved</div>
+                  {ragContext ? (
+                    <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 12, color: "#888", lineHeight: 1.7, fontFamily: "'Roboto Mono', monospace" }}>{ragContext}</pre>
+                  ) : (
+                    <div style={{ color: "#444", fontSize: 13 }}>No source data captured. Run a fresh simulation to see Tavily's web intelligence.</div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Round Logs */}

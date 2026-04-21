@@ -1281,10 +1281,21 @@ export function PolyDetailModal({
     container.innerHTML = "";
     const chart = createChart(container, { width: container.clientWidth, height: 300, layout: { background: { type: ColorType.Solid, color: "#000000" }, textColor: "#999999" }, grid: { vertLines: { color: "#222222" }, horzLines: { color: "#222222" } }, timeScale: { timeVisible: true, borderColor: "#222222" }, rightPriceScale: { borderColor: "#222222", scaleMargins: { top: 0.05, bottom: 0.05 } }, crosshair: { mode: 0, vertLine: { labelBackgroundColor: "#ccff00" }, horzLine: { labelBackgroundColor: "#ccff00" } } });
     tokenIds.forEach((tid, i) => {
-      const pts = (historyData[tid] || []).map(pt => ({ time: pt.t as Time, value: pt.p * 100 }));
+      const raw = (historyData[tid] || []).map(pt => ({ time: pt.t as Time, value: pt.p * 100 }));
+      // Lightweight-charts requires strictly ascending, unique timestamps
+      const seen = new Set<number>();
+      const pts = raw
+        .sort((a, b) => (a.time as number) - (b.time as number))
+        .filter(pt => {
+          const t = pt.time as number;
+          if (seen.has(t)) return false;
+          seen.add(t);
+          return true;
+        });
       if (pts.length === 0) return;
       const series = chart.addSeries(AreaSeries, { lineColor: colors[i % colors.length], topColor: colors[i % colors.length] + "30", bottomColor: colors[i % colors.length] + "05", lineWidth: 2, priceFormat: { type: "custom", formatter: (p: any) => `${p.toFixed(1)}%` }, crosshairMarkerRadius: 5 });
       series.setData(pts);
+
     });
     chart.timeScale().fitContent();
     const ro = new ResizeObserver(() => { chart.applyOptions({ width: container.clientWidth }); });

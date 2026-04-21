@@ -52,6 +52,8 @@ function MirofishTerminalContent() {
   const [engineStatus, setEngineStatus] = useState<"idle" | "queued" | "running">("idle");
   const [isGeneratingSeed, setIsGeneratingSeed] = useState(false);
   const [seedError, setSeedError] = useState("");
+  const [tavilyQuery, setTavilyQuery] = useState("");
+  const [tavilyContext, setTavilyContext] = useState("");
 
   // ── Launch queue state: provides immediate feedback between button click and SSE start
   const [isLaunching, setIsLaunching] = useState(false);
@@ -290,6 +292,15 @@ function MirofishTerminalContent() {
         setSeed(data.seed);
         setGeneratedSeed(data.seed);
         setSeedMode("write");
+        // Store Tavily intel in state + sessionStorage for the results page to pick up
+        const q = data.searchQuery || "";
+        const ctx = data.tavilyContext || "";
+        setTavilyQuery(q);
+        setTavilyContext(ctx);
+        try {
+          sessionStorage.setItem("hemlo_rag_query", q);
+          sessionStorage.setItem("hemlo_rag_context", ctx);
+        } catch {}
         return true;
       } else {
         const errMsg = data.error || "Seed generation returned empty response";
