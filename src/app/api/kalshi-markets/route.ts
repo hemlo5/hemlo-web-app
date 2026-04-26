@@ -206,7 +206,7 @@ export async function GET(req: NextRequest) {
 
       const evRes = await fetch(url.toString(), {
         headers: { Accept: "application/json" },
-        next: { revalidate: 60 },
+        cache: "no-store", // Prevent Next.js from caching >2MB Kalshi payloads
         signal: AbortSignal.timeout(10000),
       });
       if (!evRes.ok) break;
