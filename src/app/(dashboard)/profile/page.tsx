@@ -327,9 +327,9 @@ export default function ProfilePage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {[
               { label: "Run a Simulation", href: "/simulate/mirofish" },
-              { label: "Explore Markets", href: "/home" },
+              { label: "Explore Markets", href: "/polymarket" },
               { label: "Simulation History", href: "/history" },
-              { label: "Markets Dashboard", href: "/home" },
+              { label: "Markets Dashboard", href: "/polymarket" },
             ].map(link => (
               <Link
                 key={link.label}

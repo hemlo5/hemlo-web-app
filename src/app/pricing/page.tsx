@@ -39,7 +39,7 @@ function PricingHeader({ user, tier, onSignOut }: { user: any; tier: string; onS
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 24px", height: 64, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
 
         {/* Logo */}
-        <Link href="/home" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 10 }}>
+        <Link href="/polymarket" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{
             width: 32, height: 32, borderRadius: 8,
             background: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
@@ -51,7 +51,7 @@ function PricingHeader({ user, tier, onSignOut }: { user: any; tier: string; onS
 
         {/* Nav center */}
         <nav style={{ display: "flex", gap: 4 }}>
-          {[{ label: "Home", href: "/home" }, { label: "Pricing", href: "/pricing" }, { label: "Dashboard", href: "/simulate/mirofish" }].map(item => (
+          {[{ label: "Home", href: "/polymarket" }, { label: "Pricing", href: "/pricing" }, { label: "Dashboard", href: "/simulate/mirofish" }].map(item => (
             <Link key={item.href} href={item.href} style={{
               padding: "6px 16px", borderRadius: 999, fontSize: 13, fontWeight: 500,
               color: item.href === "/pricing" ? "#000" : "rgba(255,255,255,0.6)",

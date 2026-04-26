@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code')
 
   // if "next" is in param, use it as the redirect URL
-  const next = searchParams.get('next') ?? '/home'
+  const next = searchParams.get('next') ?? '/polymarket'
 
   // ── Determine the real origin ──────────────────────────────────────────────
   // Railway (and most reverse proxies) forward the real host via x-forwarded-host.

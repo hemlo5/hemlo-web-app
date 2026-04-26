@@ -9,13 +9,13 @@ export default async function RootPage({
 
   // Handle OAuth callbacks
   if (sp.code) {
-    redirect(`/auth/callback?code=${encodeURIComponent(sp.code)}&next=/home`)
+    redirect(`/auth/callback?code=${encodeURIComponent(sp.code)}&next=/polymarket`)
   }
 
   if (sp.error) {
-    redirect(`/home?auth_error=${encodeURIComponent(sp.error_description ?? sp.error)}`)
+    redirect(`/polymarket?auth_error=${encodeURIComponent(sp.error_description ?? sp.error)}`)
   }
 
-  // Always redirect to /home
-  redirect("/home")
+  // Always redirect to /polymarket
+  redirect("/polymarket")
 }
