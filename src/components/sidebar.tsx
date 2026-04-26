@@ -258,13 +258,13 @@ export function Sidebar() {
           return (
             <Link key={mode.label} href={mode.active ? mode.href : "#"}
               className={"bnav-item" + (isActive ? " active" : "")}>
-              {mode.iconUrls ? (
+              {(mode as any).iconUrls ? (
                 <div style={{ position: "relative", width: 24, height: 24 }}>
-                  <img src={mode.iconUrls[0]} alt="Polymarket" style={{ width: 16, height: 16, position: "absolute", top: 0, left: 0, zIndex: 2, filter: "drop-shadow(1px 1px 1px rgba(0,0,0,0.5))" }} />
-                  <img src={mode.iconUrls[1]} alt="Kalshi" style={{ width: 16, height: 16, position: "absolute", bottom: 0, right: 0, zIndex: 1 }} />
+                  <img src={(mode as any).iconUrls[0]} alt="Polymarket" style={{ width: 16, height: 16, position: "absolute", top: 0, left: 0, zIndex: 2, filter: "drop-shadow(1px 1px 1px rgba(0,0,0,0.5))" }} />
+                  <img src={(mode as any).iconUrls[1]} alt="Kalshi" style={{ width: 16, height: 16, position: "absolute", bottom: 0, right: 0, zIndex: 1 }} />
                 </div>
-              ) : mode.iconUrl ? (
-                <img src={mode.iconUrl} alt={mode.label} style={{ width: 18, height: 18, objectFit: "contain", filter: "none" }} />
+              ) : (mode as any).iconUrl ? (
+                <img src={(mode as any).iconUrl} alt={mode.label} style={{ width: 18, height: 18, objectFit: "contain", filter: "none" }} />
               ) : (
                 <Icon size={18} color={isActive ? "var(--accent)" : "var(--text-muted)"} />
               )}
