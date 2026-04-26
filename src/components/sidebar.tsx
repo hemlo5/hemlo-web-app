@@ -19,6 +19,13 @@ const MODES = [
   { icon: MapPin,    label: "Geo Map",    href: "/geo",              active: true },
 ];
 
+const MOBILE_MODES = [
+  { icon: BarChart2, label: "Polymarket", href: "/polymarket", active: true, iconUrl: "/polymarket.webp" },
+  { icon: BarChart2, label: "Kalshi",     href: "/kalshi",     active: true, iconUrl: "/kalshi.webp" },
+  { icon: Cpu,       label: "Simulate",   href: "/simulate/mirofish",active: true, iconUrl: "/logo.svg" },
+  { icon: History,   label: "History",    href: "/history",          active: true },
+];
+
 // ── PORTALLED SIGN-IN MODAL ─────────────────────────────────────────────────
 function SignInModal({ onClose, onGoogle }: { onClose: () => void; onGoogle: () => void }) {
   return createPortal(
@@ -252,7 +259,7 @@ export function Sidebar() {
 
       {/* ── MOBILE BOTTOM NAV ── */}
       <nav className="sidebar-bottom-nav">
-        {MODES.slice(0, 5).map((mode) => {
+        {MOBILE_MODES.map((mode) => {
           const Icon = mode.icon;
           const isActive = pathname === mode.href || pathname.startsWith(mode.href + "/");
           return (
