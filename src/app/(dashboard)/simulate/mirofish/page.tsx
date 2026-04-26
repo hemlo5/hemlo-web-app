@@ -37,10 +37,11 @@ function MirofishTerminalContent() {
   const [scenario, setScenario] = useState("");
   const [seed, setSeed] = useState("");
   const seedRef = useRef(""); // keep ref in sync so startSimulation always reads latest
+  const testModeRef = useRef(false); // set true for Quick Test runs
   const [seedMode, setSeedMode] = useState<"write" | "upload" | "auto">("auto");
   const [depthLevel, setDepthLevel] = useState<"standard" | "deep" | "super">("standard");
-  const [agents, setAgents] = useState(25);
-  const [rounds, setRounds] = useState(6);
+  const [agents, setAgents] = useState(15);
+  const [rounds, setRounds] = useState(5);
   const [parallelGen, setParallelGen] = useState(3);
   const [llmModel, setLlmModel] = useState("deepseek-v3");
 
@@ -80,6 +81,21 @@ function MirofishTerminalContent() {
     const sm = searchParams.get("seedMode");
     if (sm === "auto" || sm === "write" || sm === "upload") {
       setSeedMode(sm as any);
+    }
+  }, [searchParams]);
+
+  const [marketStats, setMarketStats] = useState<{id?: string, vol?: string, liq?: string, last?: string, img?: string}>({});
+  useEffect(() => {
+    if (!searchParams) return;
+    const mId = searchParams.get("marketId");
+    if (mId) {
+      setMarketStats({
+        id: mId,
+        vol: searchParams.get("vol") || "",
+        liq: searchParams.get("liq") || "",
+        last: searchParams.get("last") || "",
+        img: searchParams.get("img") || ""
+      });
     }
   }, [searchParams]);
 
@@ -412,9 +428,13 @@ function MirofishTerminalContent() {
     // ── Step 4: Save placeholder to DB
     let simDbId: string | null = null;
     try {
+      const dbDomain = marketStats.id 
+        ? `${domain}|${marketStats.id}|${marketStats.vol}|${marketStats.liq}|${marketStats.last}|${marketStats.img}`
+        : domain;
+        
       const dbRes = await fetch("/api/custom-simulations", {
         method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ scenario, domain, reality_seed: seedRef.current || seed || scenario, agent_count: agents, rounds, llm_model: llmModel, parallel_gen: parallelGen, platforms: ["twitter", "reddit"] })
+        body: JSON.stringify({ scenario, domain: dbDomain, reality_seed: seedRef.current || seed || scenario, agent_count: agents, rounds, llm_model: llmModel, parallel_gen: parallelGen, platforms: ["twitter", "reddit"] })
       });
       const dbData = await dbRes.json();
       if (dbRes.status === 401) {
@@ -470,6 +490,8 @@ function MirofishTerminalContent() {
       url.searchParams.append("agent_count", agents.toString());
       url.searchParams.append("rounds", rounds.toString());
       url.searchParams.append("domain", domain);
+      if (testModeRef.current) url.searchParams.append("test_mode", "true");
+      testModeRef.current = false; // reset after use
 
       addLog(`→ Connecting to Modal Serverless Engine...`);
       
@@ -537,12 +559,45 @@ function MirofishTerminalContent() {
             clearInterval(timerRef.current);
             updateStep(3, "done", getT());
             updateStep(4, "done", getT());
-            addLog(`✓ Simulation complete! Redirecting...`);
-            // Set completing flag FIRST — blocks the persist effect from re-writing
-            // sessionStorage due to React's batched state updates.
-            isCompletingRef.current = true;
-            sessionStorage.removeItem(SESSION_KEY);
-            router.push(`/simulate/mirofish/${simDbId}`);
+            addLog(`✓ Simulation complete! Saving results...`);
+            
+            const finalize = () => {
+              isCompletingRef.current = true;
+              sessionStorage.removeItem(SESSION_KEY);
+              router.push(`/simulate/mirofish/${simDbId}`);
+            };
+
+            if (event.result) {
+              fetch("/api/custom-simulations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id: simDbId,
+                  status: "completed",
+                  result: event.result,
+                  report_text: event.result.report_text,
+                  round_logs: event.result.round_logs,
+                  confidence: event.result.confidence,
+                  primary_probability: event.result.primary_probability,
+                  runtime_seconds: Math.floor((Date.now() - startT) / 1000),
+                  completed_at: new Date().toISOString()
+                })
+              }).then(async (res) => {
+                if (!res.ok) {
+                  const err = await res.json().catch(() => ({}));
+                  console.error(`[hemlo] Failed to save result: HTTP ${res.status}`, err);
+                  addLog(`⚠ Save returned ${res.status}: ${err.error || "unknown error"}`);
+                } else {
+                  addLog(`✓ Results saved to database.`);
+                }
+                finalize();
+              }).catch(err => {
+                console.error("Failed to save result:", err);
+                finalize();
+              });
+            } else {
+              finalize();
+            }
           }
         } catch (err) {
           console.error("SSE Parse error", err, e.data);
@@ -990,7 +1045,7 @@ function MirofishTerminalContent() {
 
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 32 }}>
                         {[
-                          { id: "standard", label: "Standard", desc: `25 Agents · 6 Rounds ${!isPro ? `(Remaining: ${2 - standardUses}/2)` : ""}`, agents: 25, rounds: 6, pro: false },
+                          { id: "standard", label: "Standard", desc: `15 Agents · 5 Rounds ${!isPro ? `(Remaining: ${2 - standardUses}/2)` : ""}`, agents: 15, rounds: 5, pro: false },
                           { id: "super", label: "Super", desc: "100 Agents · 10 Rounds", agents: 100, rounds: 10, pro: true },
                           { id: "deep", label: "Deep", desc: "250 Agents · 15 Rounds", agents: 250, rounds: 15, pro: true },
                           { id: "custom", label: "Custom", desc: "Manually adjust every detail", agents: 50, rounds: 8, pro: false },
@@ -1065,6 +1120,21 @@ function MirofishTerminalContent() {
                         }}
                       >
                         LAUNCH SIMULATION
+                      </button>
+
+                      {/* Quick Test button — dev shortcut */}
+                      <button
+                        onClick={() => {
+                          testModeRef.current = true;
+                          startSimulation();
+                        }}
+                        style={{
+                          width: "100%", padding: "12px", background: "transparent", color: "#888",
+                          borderRadius: 12, fontWeight: 700, fontSize: 13, cursor: "pointer",
+                          border: "1px solid #333", marginTop: 8, letterSpacing: 0.5
+                        }}
+                      >
+                        ⚡ Quick Test (1 agent · 1 round · ~30s)
                       </button>
                     </motion.div>
                   )}

@@ -307,8 +307,8 @@ function CatTabs({
 }
 
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────────
-export function ExploreMarkets() {
-  const [topTab, setTopTab]     = useState<"polymarket" | "kalshi">("polymarket");
+export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: { defaultTab?: "polymarket" | "kalshi", hideTabs?: boolean }) {
+  const [topTab, setTopTab]     = useState<"polymarket" | "kalshi">(defaultTab);
   const [activeCat, setActiveCat] = useState("trending");
 
   // Polymarket
@@ -445,46 +445,48 @@ export function ExploreMarkets() {
         </div>
 
         {/* Source tabs */}
-        <div className="source-tabs-container">
-          {TOP_TABS.map(t => (
-            <button
-              key={t.key}
-              onClick={() => setTopTab(t.key as any)}
-              style={{
-                padding: "8px 20px", borderRadius: "10px 10px 0 0",
-                border: topTab === t.key 
-                  ? (t.key === "polymarket" ? "1px solid #2E5CFF" : "1px solid #00DD94")
-                  : "1px solid #1a1f2e",
-                borderBottom: topTab === t.key ? "none" : "1px solid #1a1f2e",
-                background: topTab === t.key 
-                  ? (t.key === "polymarket" ? "#2E5CFF" : "#00DD94") 
-                  : "transparent",
-                color: topTab === t.key 
-                  ? (t.key === "polymarket" ? "#ffffff" : "#000000") 
-                  : "#8a94a6",
-                fontWeight: topTab === t.key ? 800 : 500,
-                fontSize: 13, cursor: "pointer", transition: "all 0.15s",
-                position: "relative", zIndex: topTab === t.key ? 2 : 1,
-                display: "flex", alignItems: "center", justifyContent: "center"
-              }}
-            >
-              {t.key === "kalshi" && (
-                <span className="hide-mobile" style={{
-                  marginRight: 6, fontSize: 9, fontWeight: 900, letterSpacing: 1,
-                  color: topTab === t.key ? "#000000" : "#22c55e", 
-                  background: topTab === t.key ? "rgba(0,0,0,0.1)" : "rgba(34,197,94,0.12)", 
-                  border: topTab === t.key ? "1px solid rgba(0,0,0,0.2)" : "1px solid rgba(34,197,94,0.25)",
-                  borderRadius: 4, padding: "1px 5px", textTransform: "uppercase", verticalAlign: "middle",
-                }}>TradFi</span>
-              )}
-              {t.key === "kalshi" ? (
-                <>
-                  Kalshi <span className="hide-mobile" style={{ marginLeft: 4 }}>TradFi</span>
-                </>
-              ) : t.label}
-            </button>
-          ))}
-        </div>
+        {!hideTabs && (
+          <div className="source-tabs-container">
+            {TOP_TABS.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setTopTab(t.key as any)}
+                style={{
+                  padding: "8px 20px", borderRadius: "10px 10px 0 0",
+                  border: topTab === t.key 
+                    ? (t.key === "polymarket" ? "1px solid #2E5CFF" : "1px solid #00DD94")
+                    : "1px solid #1a1f2e",
+                  borderBottom: topTab === t.key ? "none" : "1px solid #1a1f2e",
+                  background: topTab === t.key 
+                    ? (t.key === "polymarket" ? "#2E5CFF" : "#00DD94") 
+                    : "transparent",
+                  color: topTab === t.key 
+                    ? (t.key === "polymarket" ? "#ffffff" : "#000000") 
+                    : "#8a94a6",
+                  fontWeight: topTab === t.key ? 800 : 500,
+                  fontSize: 13, cursor: "pointer", transition: "all 0.15s",
+                  position: "relative", zIndex: topTab === t.key ? 2 : 1,
+                  display: "flex", alignItems: "center", justifyContent: "center"
+                }}
+              >
+                {t.key === "kalshi" && (
+                  <span className="hide-mobile" style={{
+                    marginRight: 6, fontSize: 9, fontWeight: 900, letterSpacing: 1,
+                    color: topTab === t.key ? "#000000" : "#22c55e", 
+                    background: topTab === t.key ? "rgba(0,0,0,0.1)" : "rgba(34,197,94,0.12)", 
+                    border: topTab === t.key ? "1px solid rgba(0,0,0,0.2)" : "1px solid rgba(34,197,94,0.25)",
+                    borderRadius: 4, padding: "1px 5px", textTransform: "uppercase", verticalAlign: "middle",
+                  }}>TradFi</span>
+                )}
+                {t.key === "kalshi" ? (
+                  <>
+                    Kalshi <span className="hide-mobile" style={{ marginLeft: 4 }}>TradFi</span>
+                  </>
+                ) : t.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* ── POLYMARKET PANEL ─────────────────────────────────────────────── */}
         {topTab === "polymarket" && (
@@ -611,7 +613,8 @@ export function ExploreMarkets() {
               market={selected}
               onClose={() => setSelected(null)}
               onSimulate={() => {
-                window.location.href = `/simulate/mirofish?scenario=${encodeURIComponent(selected.question)}&seedMode=auto`;
+                const dom = topTab === "polymarket" ? "polymarket" : "kalshi";
+                window.location.href = `/simulate/mirofish?scenario=${encodeURIComponent(selected.question)}&seedMode=auto&domain=${dom}&marketId=${encodeURIComponent(selected.id)}&vol=${encodeURIComponent(selected.volume)}&liq=${encodeURIComponent(selected.liquidityClob || 0)}&last=${encodeURIComponent(selected.lastTradePrice || 0)}&img=${encodeURIComponent(selected.icon || selected.image || '')}`;
               }}
             />
           )}

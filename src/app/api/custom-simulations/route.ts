@@ -42,12 +42,6 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Enforce daily limit using shared utility
-  const limitCheck = await checkSimulationLimit(user.id);
-  if (!limitCheck.allowed) {
-    return NextResponse.json({ error: limitCheck.reason }, { status: 429 });
-  }
-
   const supaAdmin = getSupaAdmin();
   if (!supaAdmin) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
 
@@ -78,6 +72,14 @@ export async function POST(req: NextRequest) {
     completed_at
   } = body;
 
+  // Only enforce daily limit when CREATING a new simulation (not when updating results)
+  if (!id) {
+    const limitCheck = await checkSimulationLimit(user.id);
+    if (!limitCheck.allowed) {
+      return NextResponse.json({ error: limitCheck.reason }, { status: 429 });
+    }
+  }
+
   const payload: any = {
     user_id: user.id,
     scenario,
@@ -98,8 +100,9 @@ export async function POST(req: NextRequest) {
   if (report_text) payload.report_text = report_text;
   if (round_logs) payload.round_logs = round_logs;
   if (agent_breakdown) payload.agent_breakdown = agent_breakdown;
-  if (confidence !== undefined) payload.confidence = confidence;
-  if (primary_probability !== undefined) payload.primary_probability = primary_probability;
+  // NOTE: confidence column is INT in DB — we store the text in result JSON, skip separate column
+  // if (confidence !== undefined) payload.confidence = confidence;
+  if (primary_probability !== undefined && primary_probability !== null) payload.primary_probability = Math.round(Number(primary_probability)) || null;
   if (consensus_round !== undefined) payload.consensus_round = consensus_round;
   if (runtime_seconds !== undefined) payload.runtime_seconds = runtime_seconds;
   if (completed_at) payload.completed_at = completed_at;

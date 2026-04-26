@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import {
   BarChart2, Globe, DollarSign, TrendingUp, TrendingDown,
   Zap, Activity, Radio, ArrowRight, ChevronDown, ChevronUp, Filter,
-  AlertTriangle, Flame, Clock
+  AlertTriangle, Flame, Clock, Search, X
 } from "lucide-react"
 import Link from "next/link"
 import { HemloIndexChart, genIndexData } from "@/components/hemlo-index-chart"
@@ -17,6 +17,7 @@ import { useTrendingTopics } from "@/lib/useTrendingTopics"
 import type { TrendingTopic, MarketStats } from "@/lib/types"
 import { createChart, ColorType, AreaSeries } from "lightweight-charts"
 import { useRef } from "react"
+import { createClient } from "@/utils/supabase/client"
 
 // MINI PRICE CHART - REMOVED
 
@@ -138,6 +139,29 @@ export default function HomePage() {
   const [showMore, setShowMore] = useState(false)
   const [showScrollBtn, setShowScrollBtn] = useState(true)
   const [mobileSlideOpen, setMobileSlideOpen] = useState(false)
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false)
+  const [user, setUser] = useState<any>(null)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setUser(user)
+    })
+  }, [])
+
+  const doGoogleSignIn = async () => {
+    const supabase = createClient()
+    const origin = typeof window !== "undefined" ? window.location.origin : ""
+    const redirectTo = `${origin}/auth/callback`
+
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo,
+        queryParams: { prompt: "select_account", access_type: "offline" },
+      },
+    })
+  }
 
   useEffect(() => {
     // Wait a brief moment to ensure DOM is ready
@@ -166,21 +190,34 @@ export default function HomePage() {
   const [stats, setStats] = useState<MarketStats | null>(null)
   useEffect(() => { fetch("/api/market-stats").then(r => r.json()).then(setStats).catch(() => {}) }, [])
 
-  // Completed Simulations (pulled directly from DB)
-  const [completedSims, setCompletedSims] = useState<TrendingTopic[]>([])
-  const [mySims, setMySims] = useState<TrendingTopic[]>([])
+  // Highest Volume Live Kalshi Markets
+  const [topKalshiMarkets, setTopKalshiMarkets] = useState<TrendingTopic[]>([])
   const [loadingSims, setLoadingSims] = useState(true)
-  useEffect(() => {
-    fetch("/api/simulations-completed")
-      .then(r => r.json())
-      .then(d => { setCompletedSims(d.data || []); setLoadingSims(false) })
-      .catch(() => { setLoadingSims(false) })
+  const [kalshiCat, setKalshiCat] = useState("trending")
 
-    fetch("/api/my-simulations")
+  useEffect(() => {
+    setLoadingSims(true)
+    fetch(`/api/kalshi-markets?category=${kalshiCat}`)
       .then(r => r.json())
-      .then(d => { setMySims(d.data || []) })
-      .catch(() => {})
-  }, [])
+      .then(d => {
+        // Map Kalshi specific fields to the TrendingTopic format the UI expects
+        const mapped = (d.markets || []).map((m: any) => ({
+          ...m,
+          topic: m.title,
+          category: m.category || "Kalshi",
+          polymarketOdds: m.yesPrice?.toString() || "50",
+          outcomes: m.outcomes && m.outcomes.length > 0 
+            ? m.outcomes 
+            : [{ label: "Yes", prob: m.yesPrice || 50 }, { label: "No", prob: m.noPrice || 50 }],
+          icon: m.image,
+          moneyAtStake: m.volume,
+          marketType: m.marketType === "categorical" || (m.outcomes && m.outcomes.length > 2) ? "categorical" : "binary",
+        }))
+        setTopKalshiMarkets(mapped)
+        setLoadingSims(false)
+      })
+      .catch(() => { setLoadingSims(false) })
+  }, [kalshiCat])
 
   // BTC price from assets - REMOVED
 
@@ -201,13 +238,7 @@ export default function HomePage() {
   // BTC price logic - REMOVED
 
   // Simulation cards — filter & sort
-  const simCandidates = simFilter === "mine" ? mySims : completedSims
-  const sorted = [...simCandidates].sort((a, b) => {
-    if (simSort === "divergence") return Math.abs(b.divergence ?? 0) - Math.abs(a.divergence ?? 0)
-    if (simSort === "confidence") return (b.confidence ?? 0) - (a.confidence ?? 0)
-    return 0
-  })
-  const displayed = showMore ? sorted : sorted.slice(0, 9)
+  const displayed = topKalshiMarkets
 
   // Auto-scroll for the carousel
   useEffect(() => {
@@ -232,7 +263,37 @@ export default function HomePage() {
   return (
     <div style={{ background: "var(--bg-primary)", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
+      {/* ── KALSHI BRANDING HEADER ── */}
+      <div style={{ padding: "20px 32px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 20, background: "#0c0f16" }}>
+         {/* Top Row: Logo, Search, Auth */}
+         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 200 }}>
+               <img src="/kalshi.webp" alt="Kalshi" style={{ width: 26, height: 26 }} />
+               <span style={{ fontSize: 18, fontWeight: 800, color: "#ffffff" }}>Kalshi</span>
+            </div>
 
+            <div className="hide-mobile" style={{ display: "flex", alignItems: "center", gap: 24, minWidth: 200, justifyContent: "flex-end" }}>
+               <button onClick={() => setHowItWorksOpen(true)} style={{ background: "none", border: "none", padding: 0, fontSize: 13, color: "#22c55e", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                 <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#22c55e", color: "#0c0f16", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>i</div>
+                 How it works
+               </button>
+               {!user && (
+                 <button onClick={doGoogleSignIn} style={{ padding: "8px 24px", borderRadius: 8, background: "#22c55e", color: "white", border: "none", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Log In</button>
+               )}
+            </div>
+         </div>
+         {/* Categories */}
+         <div style={{ display: "flex", gap: 28, overflowX: "auto", scrollbarWidth: "none", alignItems: "center" }}>
+            <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+              <TrendingUp size={16} /> Trending
+            </span>
+            {["Elections", "Politics", "Economics", "Culture", "Tech", "Science", "Financials", "Companies", "Mentions", "Weather", "Climate"].map(c => (
+              <button key={c} onClick={() => setKalshiCat(c.toLowerCase())} style={{ background: "none", border: "none", padding: 0, color: kalshiCat === c.toLowerCase() ? "#ffffff" : "#8a94a6", fontWeight: kalshiCat === c.toLowerCase() ? 700 : 500, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", transition: "color 0.2s" }}>
+                {c}
+              </button>
+            ))}
+         </div>
+      </div>
 
       {/* ── BODY: 75/25 split ── */}
       <div 
@@ -270,159 +331,120 @@ export default function HomePage() {
                 transition={{ duration: 0.3 }}
                 style={{
                   width: "100%",
-                  maxWidth: 980,
-                  background: "#ffffff",
-                  border: "1px solid var(--border)",
-                  borderRadius: 20,
+                  maxWidth: 1000,
+                  background: "#11141b",
+                  border: "1px solid #1f2330",
+                  borderRadius: 16,
                   display: "flex",
                   flexDirection: "column",
                   overflow: "hidden",
-                  boxShadow: "0 12px 40px rgba(0,0,0,0.08)",
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
                   position: "relative",
-                  color: "#000000",
+                  color: "#ffffff",
                 }}
               >
                 {(() => {
-                  // Reusing chartTab state as active index (number) for the carousel
                   const activeIdx = typeof chartTab === "number" ? chartTab : 0;
                   const t = displayed[activeIdx % displayed.length];
                   if (!t) return null;
                   
                   const isCat = t.marketType === "categorical";
-                  const outcomes = isCat ? (t.outcomes || []) : [{ label: "Yes", prob: parseInt(t.polymarketOdds || "50"), hemloProb: t.hemloOdds || 50 }, { label: "No", prob: 100 - parseInt(t.polymarketOdds || "50"), hemloProb: 100 - (t.hemloOdds || 50) }];
+                  const outcomes = isCat ? (t.outcomes || []) : [{ label: "Yes", prob: parseInt(t.polymarketOdds || "50") }, { label: "No", prob: 100 - parseInt(t.polymarketOdds || "50") }];
                   
+                  const o1 = outcomes[0] || { label: "UP", prob: 50 };
+                  const o2 = outcomes[1] || { label: "DOWN", prob: 50 };
+                  const o1Mult = (100 / Math.max(1, o1.prob)).toFixed(1);
+                  const o2Mult = (100 / Math.max(1, o2.prob)).toFixed(2);
+
                   return (
                     <div className="home-carousel-card" style={{ display: "flex", flex: 1, minHeight: 460 }}>
                       
-                      {/* Carousel Card Left Side */}
-                      <div className="home-carousel-left" style={{ flex: 1, padding: "clamp(20px, 4vw, 40px)", display: "flex", flexDirection: "column" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-                          <div style={{ width: 36, height: 36, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(0,0,0,0.08)", background: "#f5f5f5", flexShrink: 0 }}>
-                            <img src="/polymarket.webp" alt="Polymarket" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      {/* ── LEFT SIDE: Info, Buttons, Comments ── */}
+                      <div className="home-carousel-left" style={{ flex: "0 0 40%", padding: "24px 32px", display: "flex", flexDirection: "column", borderRight: "1px solid #1f2330" }}>
+                        
+                        {/* Header: Logo + Title */}
+                        <div style={{ display: "flex", gap: 16, marginBottom: 24 }}>
+                          <div style={{ width: 48, height: 48, borderRadius: 12, overflow: "hidden", background: "#1f2330", flexShrink: 0 }}>
+                            <img src={t.icon || t.image || "/kalshi.webp"} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           </div>
                           <div>
-                            <div style={{ fontSize: 11, color: "#666666", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>Polymarket</div>
-                            {t.section && <div style={{ fontSize: 9, color: "#000000", fontWeight: 700 }}>{t.section}</div>}
+                            <div style={{ fontSize: 22, fontWeight: 800, color: "#ffffff", lineHeight: 1.2, marginBottom: 4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                              {t.topic}
+                            </div>
+                            <div style={{ fontSize: 13, color: "#8a94a6", fontWeight: 500 }}>
+                              {t.endDate ? `Ends ${new Date(t.endDate).toLocaleDateString()}` : "Active Market"}
+                            </div>
                           </div>
                         </div>
                         
-                        <div style={{ fontSize: "clamp(18px, 4vw, 24px)", fontWeight: 800, color: "#000000", lineHeight: 1.3, marginBottom: 24 }}>
-                          {t.topic}
+                        {/* Big Buttons */}
+                        <div style={{ display: "flex", gap: 12, marginBottom: 32 }}>
+                          <button style={{ flex: 1, padding: "16px", borderRadius: 12, background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)", color: "#22c55e", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", justifyContent: "center", gap: 8 }}>
+                            {o1.label.toUpperCase()} <span style={{ opacity: 0.8 }}>{o1Mult}x</span>
+                          </button>
+                          <button style={{ flex: 1, padding: "16px", borderRadius: 12, background: "#1f2330", border: "1px solid #2d3748", color: "#8a94a6", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", justifyContent: "center", gap: 8 }}>
+                            {o2.label.toUpperCase()} <span style={{ opacity: 0.8 }}>{o2Mult}x</span>
+                          </button>
                         </div>
                         
-                        <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-                          {/* Outcomes: Desktop only on the left side */}
-                          <div className="hide-mobile" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                            {outcomes.slice(0, 4).map((o, i) => (
-                              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                <span style={{ fontSize: "clamp(12px, 3vw, 14px)", fontWeight: 700, color: "#333333" }}>{o.label}</span>
-                                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                                  {o.hemloProb !== undefined && (
-                                    <span style={{ fontSize: "clamp(11px, 2.5vw, 12px)", fontWeight: 600, color: "var(--accent)" }}>AI {Math.round(o.hemloProb)}%</span>
-                                  )}
-                                  <span style={{ fontSize: "clamp(14px, 3.5vw, 16px)", fontWeight: 800, color: "#000000", width: 44, textAlign: "right" }}>{Math.round(o.prob)}%</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                          
-                          {/* Graph: Mobile only on the left side */}
-                          <div className="mobile-only" style={{ height: 120, width: "100%", opacity: 1, marginTop: 10 }}>
-                             <HemloIndexChart 
-                               data={genIndexData(40, t.hemloOdds ?? 50, parseInt(t.polymarketOdds ?? "50"))} 
-                               idxColor={"#000000"} 
-                               bg={"rgba(0,0,0,0)"} 
-                               showGrid={false}
-                             />
-                          </div>
-                        </div>
-                        
-                        {/* Pagination: Desktop only */}
-                        <div className="hide-mobile" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 32 }}>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            {displayed.map((_, i) => (
-                              <div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: i === activeIdx ? "#000000" : "#cccccc" }} />
-                            ))}
-                          </div>
-                          <div style={{ display: "flex", gap: 12 }}>
-                            <button onClick={() => setChartTab(((activeIdx - 1 + displayed.length) % displayed.length) as any)} style={{ padding: "8px 16px", borderRadius: 20, background: "#f5f5f5", border: "1px solid #e0e0e0", color: "#000", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>&lt; Prev</button>
-                            <button onClick={() => setChartTab(((activeIdx + 1) % displayed.length) as any)} style={{ padding: "8px 16px", borderRadius: 20, background: "#f5f5f5", border: "1px solid #e0e0e0", color: "#000", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Next &gt;</button>
-                          </div>
+                        {/* Simulate Button instead of Comments */}
+                        <div style={{ display: "flex", flexDirection: "column", flex: 1, justifyContent: "center" }}>
+                          <Link href="/simulate/mirofish" style={{ textDecoration: "none" }}>
+                            <div style={{ padding: "18px 24px", borderRadius: 12, background: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)", color: "white", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", justifyContent: "center", alignItems: "center", gap: 12, boxShadow: "0 8px 24px rgba(34,197,94,0.3)", transition: "transform 0.2s" }}>
+                              <Activity size={20} />
+                              Simulate This Market →
+                            </div>
+                          </Link>
                         </div>
 
-                        {/* Mobile Navigation Dots (Simplified) */}
-                        <div className="mobile-only" style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 16 }}>
-                          {displayed.map((_, i) => (
-                            <div key={i} style={{ width: 4, height: 4, borderRadius: "50%", background: i === activeIdx ? "#000000" : "#eeeeee" }} />
-                          ))}
+                        {/* Footer / Vol */}
+                        <div style={{ marginTop: 24, fontSize: 13, color: "#3b82f6", fontWeight: 700 }}>
+                          {t.moneyAtStake ? `${t.moneyAtStake} Vol` : "Trending"}
                         </div>
                       </div>
-
-                      {/* Mobile Toggle Button (Visible only on mobile) */}
-                      <button 
-                        className="mobile-only"
-                        onClick={() => setMobileSlideOpen(!mobileSlideOpen)}
-                        style={{
-                          position: "absolute", top: 16, right: 16, zIndex: 30,
-                          width: 32, height: 32, borderRadius: "50%",
-                          background: "#000000", border: "1px solid #222222",
-                          display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
-                          boxShadow: "0 4px 12px rgba(0,0,0,0.15)", padding: 6,
-                        }}
-                      >
-                        {mobileSlideOpen ? (
-                          <span style={{ color: "white", fontSize: 16, fontWeight: "bold" }}>×</span>
-                        ) : (
-                          <img src="/logo.svg" alt="Toggle Intelligence" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                        )}
-                      </button>
                       
-                      {/* Carousel Card Right Side (Divergence Graphic/Index) */}
-                      <div className={`home-carousel-right ${mobileSlideOpen ? 'open' : ''}`} style={{ width: 340, background: "#f8f9fa", borderLeft: "1px solid #e0e0e0", display: "flex", flexDirection: "column", padding: 24, position: "relative", overflow: "hidden" }}>
-                        <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", height: "100%" }}>
-                          <div style={{ fontSize: 11, color: "#666666", textTransform: "uppercase", letterSpacing: 1, marginBottom: 24 }}>Simulation Intelligence</div>
-                          
-                          <div style={{ marginBottom: 24 }}>
-                             <div style={{ fontSize: 12, fontWeight: 600, color: "#666666", marginBottom: 4 }}>Divergence Signal</div>
-                             <div style={{ fontSize: "clamp(24px, 5vw, 32px)", fontWeight: 900, color: (t.divergence ?? 0) > 0 ? "#22c55e" : "#ef4444" }}>
-                               {(t.divergence ?? 0) > 0 ? "+" : ""}{t.divergence}%
-                             </div>
-                             <div style={{ fontSize: 12, color: "#444444", marginTop: 8, lineHeight: 1.5 }}>
-                               {t.divergenceSignal || "Market consensus lacks critical contextual data."}
-                             </div>
+                      {/* ── RIGHT SIDE: Chart & Stats ── */}
+                      <div className="home-carousel-right" style={{ flex: 1, display: "flex", flexDirection: "column", padding: "24px 32px", position: "relative" }}>
+                        
+                        {/* Top Stats Row */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 40 }}>
+                          <div style={{ display: "flex", gap: 40 }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                              <span style={{ fontSize: 12, color: "#8a94a6", fontWeight: 600 }}>Volume</span>
+                              <span style={{ fontSize: 24, fontWeight: 800, color: "#94a3b8" }}>{t.moneyAtStake || "$0"}</span>
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                              <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 600 }}>Current Odds ▲</span>
+                              <span style={{ fontSize: 24, fontWeight: 800, color: "#22c55e" }}>{o1.prob}%</span>
+                            </div>
                           </div>
+                          
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                            <span style={{ fontSize: 12, color: "#8a94a6", fontWeight: 600 }}>Ends in</span>
+                            <span style={{ fontSize: 24, fontWeight: 800, color: "#ef4444" }}>4:29</span>
+                          </div>
+                        </div>
 
-                           <div style={{ marginTop: "auto" }}>
-                            {/* Outcomes duplicate for mobile drawer */}
-                            <div className="mobile-only" style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
-                              <div style={{ fontSize: 10, color: "#666666", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Market Pricing</div>
-                              {outcomes.slice(0, 4).map((o, i) => (
-                                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                  <span style={{ fontSize: "12px", fontWeight: 700, color: "#333333" }}>{o.label}</span>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    {o.hemloProb !== undefined && (
-                                      <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--accent)" }}>AI {Math.round(o.hemloProb)}%</span>
-                                    )}
-                                    <span style={{ fontSize: "14px", fontWeight: 800, color: "#000000", width: 36, textAlign: "right" }}>{Math.round(o.prob)}%</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                        {/* Main Chart Area */}
+                        <div style={{ flex: 1, position: "relative", width: "100%", opacity: 1 }}>
+                           <HemloIndexChart 
+                             data={genIndexData(60, t.hemloOdds ?? 50, parseInt(t.polymarketOdds ?? "50"))} 
+                             idxColor={"#22c55e"} 
+                             bg={"rgba(0,0,0,0)"} 
+                             showGrid={true}
+                           />
+                           {/* Fake Target Line */}
+                           <div style={{ position: "absolute", top: "50%", left: 0, right: 0, borderTop: "1px dashed #334155", zIndex: 0 }}>
+                              <div style={{ position: "absolute", right: -10, top: -12, background: "#475569", padding: "4px 12px", borderRadius: 12, fontSize: 11, fontWeight: 700, color: "#f8fafc" }}>Target</div>
+                           </div>
+                        </div>
 
-                            <div className="hide-mobile">
-                              <div style={{ fontSize: 10, color: "#666666", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Simulated Path</div>
-                              <div style={{ height: 120, width: "100%", opacity: 1 }}>
-                                 <HemloIndexChart 
-                                   data={genIndexData(40, t.hemloOdds ?? 50, parseInt(t.polymarketOdds ?? "50"))} 
-                                   idxColor={"#000000"} 
-                                   bg={"rgba(0,0,0,0)"} 
-                                   showGrid={false}
-                                 />
-                              </div>
-                            </div>
-                            <Link href={`/simulate/staple/report?topic=${encodeURIComponent(t.topic)}`} style={{ display: "block", width: "100%", background: "#000000", color: "#ffffff", textAlign: "center", padding: "12px", borderRadius: 8, marginTop: 16, fontSize: 13, fontWeight: 800, textDecoration: "none" }}>
-                              View Full Report
-                            </Link>
+                        {/* Pagination Dots at very bottom */}
+                        <div style={{ position: "absolute", bottom: 24, right: 32, display: "flex", gap: 8 }}>
+                           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            {displayed.map((_, i) => (
+                              <div key={i} onClick={() => setChartTab(i as any)} style={{ width: 6, height: 6, borderRadius: "50%", background: i === activeIdx ? "#ffffff" : "#475569", cursor: "pointer" }} />
+                            ))}
                           </div>
                         </div>
                       </div>
@@ -432,7 +454,7 @@ export default function HomePage() {
               </motion.div>
             ) : (
               <div style={{ color: "var(--text-muted)", fontSize: 14 }}>
-                {loadingSims ? "Loading Top Simulations..." : "No fully simulated markets available"}
+                {loadingSims ? "Loading Top Markets..." : "No markets available"}
               </div>
             )}
           </AnimatePresence>
@@ -484,8 +506,55 @@ export default function HomePage() {
 
       {/* ── EXPLORE ALL MARKETS ── */}
       <div id="top-simulations" style={{ borderTop: "1px solid var(--border)" }}>
-        <ExploreMarkets />
+        <ExploreMarkets defaultTab="kalshi" hideTabs={true} />
       </div>
+
+      {/* ── HOW IT WORKS TEXT MODAL ── */}
+      {howItWorksOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setHowItWorksOpen(false)}>
+          <div style={{ background: "#11141b", borderRadius: 16, overflow: "hidden", border: "1px solid #1f2330", position: "relative", width: "100%", maxWidth: 600, boxShadow: "0 20px 60px rgba(0,0,0,0.5)", padding: 40, color: "#ffffff", display: "flex", flexDirection: "column", gap: 24 }} onClick={e => e.stopPropagation()}>
+            <button onClick={() => setHowItWorksOpen(false)} style={{ position: "absolute", top: 16, right: 16, zIndex: 10, background: "rgba(255,255,255,0.1)", border: "none", color: "white", width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <X size={18} />
+            </button>
+            
+            <div>
+              <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>How Hemlo Works</div>
+              <div style={{ color: "#8a94a6", fontSize: 14, lineHeight: 1.5 }}>Hemlo AI helps you discover predictive alpha by comparing crowd consensus with our advanced simulation engine.</div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+               <div style={{ display: "flex", gap: 16 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(34,197,94,0.1)", color: "#22c55e", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>1</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Find a Market</div>
+                    <div style={{ color: "#8a94a6", fontSize: 13, lineHeight: 1.5 }}>Browse the trending Kalshi cards below or search for a specific event. Click on any market card to open the quick-view side panel.</div>
+                  </div>
+               </div>
+
+               <div style={{ display: "flex", gap: 16 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(34,197,94,0.1)", color: "#22c55e", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>2</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Click 'Simulate This'</div>
+                    <div style={{ color: "#8a94a6", fontSize: 13, lineHeight: 1.5 }}>In the side panel, review the current market pricing and outcomes. Click the prominent <strong>Simulate This</strong> button to run our proprietary intelligence engine against the event.</div>
+                  </div>
+               </div>
+
+               <div style={{ display: "flex", gap: 16 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(34,197,94,0.1)", color: "#22c55e", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, flexShrink: 0 }}>3</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Review the Alpha</div>
+                    <div style={{ color: "#8a94a6", fontSize: 13, lineHeight: 1.5 }}>Hemlo will instantly aggregate live news, sentiment, and historical data to run thousands of Monte Carlo simulations. You'll receive a detailed report showing our AI's predicted odds versus the market's current odds. If our prediction is higher, you've found alpha.</div>
+                  </div>
+               </div>
+            </div>
+
+            <button onClick={() => setHowItWorksOpen(false)} style={{ marginTop: 12, padding: "14px", borderRadius: 12, background: "#22c55e", color: "white", border: "none", fontWeight: 800, fontSize: 15, cursor: "pointer", width: "100%" }}>
+              Got it, let's go!
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

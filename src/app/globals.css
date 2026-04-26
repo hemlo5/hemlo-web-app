@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 @font-face {
   font-family: 'Euclid Circular B';
@@ -500,3 +498,22 @@ h1, h2, h3, h4, h5, h6 {
   .hide-desktop  { display: none !important; }
   .mobile-only   { display: none !important; }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   MIROFISH SIMULATION DETAILS
+══════════════════════════════════════════════════════════════════ */
+.glass-panel-bw {
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+.clean-input::placeholder { color: #666; }
+.mono-text { font-family: 'Roboto Mono', monospace; }
+
+.sim-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+.sim-scroll::-webkit-scrollbar-track { background: transparent; }
+.sim-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+.sim-scroll::-webkit-scrollbar-thumb:hover { background: #555; }
