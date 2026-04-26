@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  Loader2, ArrowRight, Check, Lock
+  Loader2, ArrowRight, Check, Lock, Zap
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -50,11 +50,19 @@ function MirofishTerminalContent() {
   const [standardUses, setStandardUses] = useState(0); // For free tier limit demo
 
   const [isPro] = useState(true);
+  const [userTier, setUserTier] = useState<string>("free");
   const [engineStatus, setEngineStatus] = useState<"idle" | "queued" | "running">("idle");
   const [isGeneratingSeed, setIsGeneratingSeed] = useState(false);
   const [seedError, setSeedError] = useState("");
   const [tavilyQuery, setTavilyQuery] = useState("");
   const [tavilyContext, setTavilyContext] = useState("");
+
+  // Fetch user tier on mount
+  useEffect(() => {
+    fetch("/api/usage").then(r => r.json()).then(d => {
+      if (d.tier) setUserTier(d.tier)
+    }).catch(() => {})
+  }, []);
 
   // ── Launch queue state: provides immediate feedback between button click and SSE start
   const [isLaunching, setIsLaunching] = useState(false);
@@ -1168,6 +1176,25 @@ function MirofishTerminalContent() {
                     Cancel
                   </button>
                 </div>
+
+                {/* Traffic Notification Upsell — free tier only */}
+                {userTier === "free" && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }} 
+                  animate={{ opacity: 1, y: 0 }} 
+                  style={{ background: "rgba(245, 158, 11, 0.1)", border: "1px solid rgba(245, 158, 11, 0.3)", borderRadius: 16, padding: "20px", display: "flex", flexDirection: "column", gap: 16, marginBottom: 8 }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 12, color: "#f59e0b", fontSize: 14, fontWeight: 600, lineHeight: 1.5 }}>
+                    <div style={{ marginTop: 2 }}>⚠️</div>
+                    <div>
+                      Simulations might be slow because we're experiencing huge traffic right now. Please do not close this page.
+                    </div>
+                  </div>
+                  <button onClick={() => router.push('/pricing')} style={{ alignSelf: "flex-start", marginLeft: 30, background: "linear-gradient(135deg, #f59e0b, #d97706)", border: "none", borderRadius: 8, padding: "10px 20px", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, boxShadow: "0 4px 12px rgba(245,158,11,0.2)" }}>
+                    <Zap size={16} fill="currentColor" /> Buy Pro to get into Fast Lane
+                  </button>
+                </motion.div>
+                )}
 
                 {/* Big Graph Card */}
                 <div style={{ background: "rgba(10,10,10,0.8)", border: "1px solid #222", borderRadius: 24, padding: 24, minHeight: 480, display: "flex", flexDirection: "column" }}>
