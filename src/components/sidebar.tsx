@@ -189,13 +189,13 @@ export function Sidebar() {
             transition: "background 0.2s, border-color 0.2s",
           }}
         >
-          {mode.iconUrls ? (
+          {(mode as any).iconUrls ? (
             <div style={{ position: "relative", width: 28, height: 28 }}>
-              <img src={mode.iconUrls[0]} alt="Polymarket" style={{ width: 20, height: 20, position: "absolute", top: 0, left: 0, objectFit: "contain", zIndex: 2, filter: "drop-shadow(1px 1px 2px rgba(0,0,0,0.8))" }} />
-              <img src={mode.iconUrls[1]} alt="Kalshi" style={{ width: 20, height: 20, position: "absolute", bottom: 0, right: 0, objectFit: "contain", zIndex: 1 }} />
+              <img src={(mode as any).iconUrls[0]} alt="Polymarket" style={{ width: 20, height: 20, position: "absolute", top: 0, left: 0, objectFit: "contain", zIndex: 2, filter: "drop-shadow(1px 1px 2px rgba(0,0,0,0.8))" }} />
+              <img src={(mode as any).iconUrls[1]} alt="Kalshi" style={{ width: 20, height: 20, position: "absolute", bottom: 0, right: 0, objectFit: "contain", zIndex: 1 }} />
             </div>
-          ) : mode.iconUrl ? (
-            <img src={mode.iconUrl} alt={mode.label} style={{ width: 20, height: 20, objectFit: "contain", filter: "none" }} />
+          ) : (mode as any).iconUrl ? (
+            <img src={(mode as any).iconUrl} alt={mode.label} style={{ width: 20, height: 20, objectFit: "contain", filter: "none" }} />
           ) : (
             <Icon size={20} color={isActive ? "var(--accent)" : "var(--text-secondary)"} />
           )}
