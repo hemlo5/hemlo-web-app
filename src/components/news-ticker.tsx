@@ -30,7 +30,13 @@ export function NewsTicker() {
   if (staples.loading || trending.loading) return <div style={{ height: 52, background: "var(--bg-primary)", borderBottom: "1px solid var(--border)" }} />
 
   return (
-    <div style={{ background: "#000000", borderBottom: "1px solid rgba(255,255,255,0.1)", height: 52, overflow: "hidden", display: "flex", alignItems: "center", flexShrink: 0 }}>
+    <>
+      <style>{`
+        @media (max-width: 768px) {
+          .news-ticker-bar { display: none !important; }
+        }
+      `}</style>
+      <div className="news-ticker-bar" style={{ background: "#000000", borderBottom: "1px solid rgba(255,255,255,0.1)", height: 52, overflow: "hidden", display: "flex", alignItems: "center", flexShrink: 0 }}>
       <div style={{ overflow: "hidden", flex: 1, position: "relative", height: "100%" }}>
         <motion.div
           key={items.length}
@@ -55,7 +61,8 @@ export function NewsTicker() {
             )
           })}
         </motion.div>
+        </div>
       </div>
-    </div>
+    </>
   )
 }

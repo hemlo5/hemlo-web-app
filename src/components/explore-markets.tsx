@@ -325,6 +325,8 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
   const [kalshiCursor, setKalshiCursor]       = useState("");   // cursor for Load More
   const [kalshiHasMore, setKalshiHasMore]     = useState(false);
   const [kalshiLoadingMore, setKalshiLoadingMore] = useState(false);
+  const [kalshiSearchQuery, setKalshiSearchQuery] = useState("");
+  const [kalshiSearchInput, setKalshiSearchInput] = useState("");
 
   // Selected market for modal (shared)
   const [selected, setSelected] = useState<PolyMarket | null>(null);
@@ -345,14 +347,16 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
   useEffect(() => { setPolyLimit(24); }, [activeCat]);
   useEffect(() => { setPolyLimit(24); }, [searchQuery]);
 
-  // ── KALSHI: fresh fetch whenever category tab changes ────────────────────
+  // ── KALSHI: fresh fetch whenever category tab or search changes ─────────
   useEffect(() => {
     if (topTab !== "kalshi") return; // lazy: only fetch when tab is visible
     setKalshiMarkets([]);
     setKalshiCursor("");
     setKalshiHasMore(false);
     setKalshiLoading(true);
-    fetch(`/api/kalshi-markets?category=${encodeURIComponent(kalshiActiveCat)}`)
+    const params = new URLSearchParams({ category: kalshiActiveCat });
+    if (kalshiSearchQuery) params.set("q", kalshiSearchQuery);
+    fetch(`/api/kalshi-markets?${params}`)
       .then(r => r.json())
       .then(d => {
         setKalshiMarkets(d.markets || []);
@@ -361,13 +365,14 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
       })
       .catch(() => { setKalshiMarkets([]); setKalshiHasMore(false); })
       .finally(() => setKalshiLoading(false));
-  }, [kalshiActiveCat, topTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [kalshiActiveCat, topTab, kalshiSearchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── KALSHI: append results on Load More ──────────────────────────────────
   const loadMoreKalshi = () => {
     if (!kalshiHasMore || kalshiLoadingMore) return;
     setKalshiLoadingMore(true);
     const params = new URLSearchParams({ category: kalshiActiveCat });
+    if (kalshiSearchQuery) params.set("q", kalshiSearchQuery);
     if (kalshiCursor) params.set("cursor", kalshiCursor);
     fetch(`/api/kalshi-markets?${params}`)
       .then(r => r.json())
@@ -382,8 +387,16 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    setSearchQuery(searchInput.trim());
+    if (topTab === "kalshi") {
+      setKalshiSearchQuery(searchInput.trim());
+    } else {
+      setSearchQuery(searchInput.trim());
+    }
   };
+
+  // sync search input placeholder value with active tab
+  const searchPlaceholder = topTab === "polymarket" ? "Search Polymarket..." : "Search Kalshi...";
+  const activeSearchQuery = topTab === "kalshi" ? kalshiSearchQuery : searchQuery;
 
   return (
     <>
@@ -430,7 +443,7 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
                 type="text"
                 value={searchInput}
                 onChange={e => setSearchInput(e.target.value)}
-                placeholder={topTab === "polymarket" ? "Search Polymarket..." : "Search Kalshi..."}
+                placeholder={searchPlaceholder}
                 style={{ padding: "9px 74px 9px 34px", fontSize: 13, border: "1px solid var(--border)",
                   borderRadius: 10, background: "var(--bg-secondary)", color: "var(--text-primary)",
                   outline: "none", width: "100%", height: 36 }}
@@ -554,6 +567,20 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
               layoutId="kalshi-active-tab"
             />
 
+            {kalshiSearchQuery && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+                <span style={{ fontSize: 12, color: "#8a94a6", fontWeight: 600 }}>
+                  Results for &quot;{kalshiSearchQuery}&quot;
+                </span>
+                <button
+                  onClick={() => { setKalshiSearchQuery(""); setKalshiSearchInput(""); setSearchInput(""); }}
+                  style={{ fontSize: 10, color: "#ef4444", cursor: "pointer", background: "#ef444418",
+                    border: "1px solid #ef444430", borderRadius: 4, padding: "2px 8px", fontWeight: 700 }}>
+                  Clear
+                </button>
+              </div>
+            )}
+
             <div className="hide-mobile" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
               <div style={{ fontSize: 11, color: "#22c55e", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2 }}>
                 ● Kalshi — CFTC-regulated exchange · Click any card to analyse
@@ -573,12 +600,24 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
               </div>
             ) : kalshiMarkets.length === 0 ? (
               <div style={{ textAlign: "center", padding: "48px 0", color: "#8a94a6", fontSize: 13 }}>
-                <div style={{ marginBottom: 10 }}>Could not load Kalshi markets for this category. Try refreshing.</div>
+                {kalshiSearchQuery ? (
+                  <div style={{ marginBottom: 10 }}>No markets found for "{kalshiSearchQuery}".</div>
+                ) : (
+                  <div style={{ marginBottom: 10 }}>Could not load Kalshi markets for this category. Try refreshing.</div>
+                )}
                 <button
-                  onClick={() => setKalshiActiveCat("trending")}
+                  onClick={() => {
+                    if (kalshiSearchQuery) {
+                      setKalshiSearchQuery("");
+                      setKalshiSearchInput("");
+                      setSearchInput("");
+                    } else {
+                      setKalshiActiveCat("trending");
+                    }
+                  }}
                   style={{ fontSize: 12, color: "#22c55e", background: "transparent", border: "1px solid #22c55e",
                     borderRadius: 8, padding: "6px 16px", cursor: "pointer", fontWeight: 700 }}>
-                  Show Trending →
+                  {kalshiSearchQuery ? "Clear Search →" : "Show Trending →"}
                 </button>
               </div>
             ) : (

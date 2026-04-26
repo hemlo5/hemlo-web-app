@@ -183,8 +183,10 @@ export async function GET(req: NextRequest) {
     const { searchParams } = req.nextUrl;
     const category = searchParams.get("category") ?? "trending"; // catKey from frontend
     const cursor   = searchParams.get("cursor") ?? "";           // Kalshi pagination cursor
+    const searchQ  = (searchParams.get("q") ?? "").toLowerCase().trim();
 
-    const isTrending = category === "trending";
+    // When a search query is present, fetch ALL events (trending mode = max coverage)
+    const isTrending = category === "trending" || searchQ.length > 0;
     let trendingOffset = isTrending ? parseInt(cursor || "0", 10) : 0;
 
     // ── Page through Kalshi events ──
@@ -192,8 +194,8 @@ export async function GET(req: NextRequest) {
     let nextCursor = isTrending ? "" : cursor; // Trending starts from scratch, slice later
     let hasMore = false;
     
-    // For trending, we pull 3 pages (600 events) for a deep volume pool. For others, we stop early.
-    const MAX_DISCOVERY_PAGES = isTrending ? 3 : 5;
+    // For trending, we pull 3 pages (600 events) for a deep volume pool. For search, we pull up to 15 to find obscure terms.
+    const MAX_DISCOVERY_PAGES = searchQ ? 15 : (isTrending ? 3 : 5);
 
     for (let page = 0; page < MAX_DISCOVERY_PAGES; page++) {
       const url = new URL(`${KALSHI_BASE}/events`);
@@ -231,13 +233,23 @@ export async function GET(req: NextRequest) {
       }
 
       // If we are NOT trending, and we have enough items, we can stop early
-      if (!isTrending && collected.length >= PAGE_SIZE + 1) break;
+      if (!isTrending && !searchQ && collected.length >= PAGE_SIZE + 1) break;
       
+      // If we are searching, we can stop early once we find enough matches
+      if (searchQ) {
+        const matches = collected.filter(c => c.title.toLowerCase().includes(searchQ));
+        if (matches.length >= PAGE_SIZE) break;
+      }
+
       // If Kalshi has no more events, stop
       if (!nextCursor) break;
     }
 
     // Sort & Paginate
+    // Apply search filter after collection
+    if (searchQ) {
+      collected = collected.filter(c => c.title.toLowerCase().includes(searchQ));
+    }
     let returnCursor = nextCursor; // Native Kalshi cursor for standard categories
 
     if (isTrending) {
