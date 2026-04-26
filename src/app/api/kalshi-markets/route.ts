@@ -115,6 +115,7 @@ type MarketCard = {
   volume: string; volumeRaw: number; volume24h: number; openInterest: number;
   link: string; image: string;
   marketType: "binary" | "categorical";
+  endDate?: string;
 };
 
 async function buildCard(event: any, markets: any[]): Promise<MarketCard> {
@@ -169,6 +170,7 @@ async function buildCard(event: any, markets: any[]): Promise<MarketCard> {
     link: `https://kalshi.com/events/${event.event_ticker}`,
     image: wikiImg ?? fallback,
     marketType: isBinary ? "binary" : "categorical",
+    endDate: event.close_time ?? event.expiration_time ?? "",
   };
 }
 

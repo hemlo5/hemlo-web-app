@@ -19,6 +19,75 @@ import { createChart, ColorType, AreaSeries } from "lightweight-charts"
 import { useRef } from "react"
 import { createClient } from "@/utils/supabase/client"
 
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+function formatEndsIn(endDateStr: string | undefined): string {
+  if (!endDateStr) return "N/A"
+  const end = new Date(endDateStr).getTime()
+  const now = Date.now()
+  const diff = end - now
+  if (diff <= 0) return "Ended"
+  
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+  
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
+}
+
+function RealKalshiChart({ t, isActive }: { t: any; isActive: boolean }) {
+  const [historyData, setHistoryData] = useState<any[] | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!isActive) return
+    if (historyData) return
+
+    const tokenId = `kalshi-${t.id}`
+
+    setLoading(true)
+    fetch(`/api/polymarket-history?tokenId=${tokenId}&interval=1w`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.history && d.history.length > 0) {
+          const hemloAvg = t.hemloOdds ?? 50
+          const formatted = d.history.map((pt: any, idx: number) => {
+            const ts = new Date(pt.t * 1000)
+            return {
+              i: idx,
+              time: `${ts.getHours().toString().padStart(2, "0")}:${ts.getMinutes().toString().padStart(2, "0")}`,
+              timestamp: pt.t,
+              crowd: pt.p * 100,
+              hemlo: hemloAvg
+            }
+          })
+          setHistoryData(formatted)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [isActive, t, historyData])
+
+  const chartData = historyData || genIndexData(60, t.hemloOdds ?? 50, parseInt(t.polymarketOdds ?? "50"))
+
+  return (
+    <div style={{ width: "100%", height: "100%", position: "relative" }}>
+      <HemloIndexChart 
+        data={chartData} 
+        idxColor="#22c55e" 
+        bg="rgba(0,0,0,0)" 
+        showGrid={true}
+      />
+      {loading && !historyData && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", color: "#8a94a6", fontSize: 14 }}>
+          Loading chart data...
+        </div>
+      )}
+    </div>
+  )
+}
+
 // MINI PRICE CHART - REMOVED
 
 // ── STAT PILL ────────────────────────────────────────────────────────────────
@@ -421,20 +490,17 @@ export default function HomePage() {
                           
                           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
                             <span style={{ fontSize: 12, color: "#8a94a6", fontWeight: 600 }}>Ends in</span>
-                            <span style={{ fontSize: 24, fontWeight: 800, color: "#ef4444" }}>4:29</span>
+                            <span style={{ fontSize: 24, fontWeight: 800, color: "#ef4444" }}>
+                              {formatEndsIn(t.endDate)}
+                            </span>
                           </div>
                         </div>
 
                         {/* Main Chart Area */}
                         <div style={{ flex: 1, position: "relative", width: "100%", opacity: 1 }}>
-                           <HemloIndexChart 
-                             data={genIndexData(60, t.hemloOdds ?? 50, parseInt(t.polymarketOdds ?? "50"))} 
-                             idxColor={"#22c55e"} 
-                             bg={"rgba(0,0,0,0)"} 
-                             showGrid={true}
-                           />
+                           <RealKalshiChart t={t} isActive={true} />
                            {/* Fake Target Line */}
-                           <div style={{ position: "absolute", top: "50%", left: 0, right: 0, borderTop: "1px dashed #334155", zIndex: 0 }}>
+                           <div style={{ position: "absolute", top: "50%", left: 0, right: 0, borderTop: "1px dashed #334155", zIndex: 0, pointerEvents: "none" }}>
                               <div style={{ position: "absolute", right: -10, top: -12, background: "#475569", padding: "4px 12px", borderRadius: 12, fontSize: 11, fontWeight: 700, color: "#f8fafc" }}>Target</div>
                            </div>
                         </div>
