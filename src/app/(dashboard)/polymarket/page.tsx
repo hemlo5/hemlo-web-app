@@ -388,9 +388,9 @@ export default function HomePage() {
                         {/* Simulate Button instead of Comments */}
                         <div style={{ display: "flex", flexDirection: "column", flex: 1, justifyContent: "center" }}>
                           <Link href="/simulate/mirofish" style={{ textDecoration: "none" }}>
-                            <div style={{ padding: "18px 24px", borderRadius: 12, background: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)", color: "white", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", justifyContent: "center", alignItems: "center", gap: 12, boxShadow: "0 8px 24px rgba(59,130,246,0.3)", transition: "transform 0.2s" }}>
-                              <Activity size={20} />
-                              Simulate This Market →
+                            <div style={{ padding: "18px 24px", borderRadius: 12, background: "#ffffff", color: "#000000", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", justifyContent: "center", alignItems: "center", gap: 12, boxShadow: "0 8px 24px rgba(255,255,255,0.15)", transition: "transform 0.2s" }}>
+                              <img src="/hemlo-icon.svg" alt="Hemlo" style={{ width: 26, height: 26, objectFit: "contain" }} />
+                              Simulate This Market
                             </div>
                           </Link>
                         </div>
