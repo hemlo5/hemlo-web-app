@@ -11,6 +11,7 @@ import { Suspense } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { MirofishGraphPanel } from "@/components/mirofish-graph-panel";
 import { TopSimulationsSection } from "@/components/top-simulations-section";
+import { NewsTicker } from "@/components/news-ticker";
 
 // ── DOMAIN PILLS ──────────────────────────────────────────────────────────────
 const DOMAINS = [
@@ -918,6 +919,7 @@ function MirofishTerminalContent() {
         )}
       </AnimatePresence>
 
+      <NewsTicker />
       <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column" }}>
 
         {phase === "idle" ? (

@@ -15,8 +15,6 @@ const MODES = [
   { icon: BarChart2, label: "Polymarket", href: "/polymarket", active: true, iconUrl: "/polymarket.webp" },
   { icon: BarChart2, label: "Kalshi",     href: "/kalshi",     active: true, iconUrl: "/kalshi.webp" },
   { icon: Cpu,       label: "Simulate",   href: "/simulate/mirofish",active: true, iconUrl: "/logo.svg" },
-  { icon: Newspaper, label: "Hot",        href: "/hot",              active: true },
-  { icon: MapPin,    label: "Geo Map",    href: "/geo",              active: true },
 ];
 
 const MOBILE_MODES = [

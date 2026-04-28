@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import {
   BarChart2, Globe, DollarSign, TrendingUp, TrendingDown,
   Zap, Activity, Radio, ArrowRight, ChevronDown, ChevronUp, Filter,
-  AlertTriangle, Flame, Clock, Search, X
+  AlertTriangle, Flame, Clock, Search, X, ChevronLeft, ChevronRight
 } from "lucide-react"
 import Link from "next/link"
 import { HemloIndexChart, genIndexData } from "@/components/hemlo-index-chart"
@@ -359,7 +359,7 @@ export default function HomePage() {
             </div>
          </div>
          {/* Categories */}
-         <div style={{ display: "flex", gap: 28, overflowX: "auto", scrollbarWidth: "none", alignItems: "center" }}>
+         <div className="hide-mobile" style={{ display: "flex", gap: 28, overflowX: "auto", scrollbarWidth: "none", alignItems: "center" }}>
             <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
               <TrendingUp size={16} /> Trending
             </span>
@@ -397,6 +397,27 @@ export default function HomePage() {
           justifyContent: "center" 
         }}>
           
+          {/* Navigation Arrow */}
+          <button 
+            onClick={() => {
+              setChartTab(prev => {
+                const activeIdx = typeof prev === "number" ? prev : 0;
+                return ((activeIdx + 1) % displayed.length) as any
+              })
+            }}
+            style={{ 
+              position: "absolute", right: 16, top: "50%", transform: "translateY(-50%)", 
+              background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", 
+              width: 44, height: 44, 
+              display: "flex", alignItems: "center", justifyContent: "center", 
+              cursor: "pointer", zIndex: 20, transition: "all 0.2s" 
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = "#3b82f6"; e.currentTarget.style.transform = "translateY(-50%) scale(1.1)"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; e.currentTarget.style.transform = "translateY(-50%) scale(1)"; }}
+          >
+            <ChevronRight size={24} />
+          </button>
+
           <AnimatePresence mode="wait">
             {displayed.length > 0 ? (
               <motion.div
