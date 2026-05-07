@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Share2, FileDown, RefreshCw, Loader2, ChevronDown, ChevronRight, MessageSquare, Send, CheckCircle2, TrendingUp, TrendingDown, Terminal, Activity, Droplets, Clock, History, BarChart3, ExternalLink } from "lucide-react";
+import { ArrowLeft, Share2, FileDown, RefreshCw, Loader2, ChevronDown, ChevronRight, MessageSquare, Send, CheckCircle2, TrendingUp, Terminal, Activity, Droplets, Clock, History, BarChart3, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -60,6 +60,8 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
     Array.isArray(data.result?.persona_highlights) ? data.result.persona_highlights : [];
   const agentList: {name: string; bio: string; type: string; persona: string}[] =
     Array.isArray(data.result?.agents) ? data.result.agents : [];
+  const stepTiming: Record<string, number> = data.result?.step_timing || {};
+
 
   // Read Tavily RAG intel from sessionStorage
   useEffect(() => {
@@ -144,7 +146,7 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
   const allEvents: any[] = [];
   logEntries.forEach((r: any, roundIdx: number) => {
     (Array.isArray(r?.sample_posts) ? r.sample_posts : []).forEach((p: any, pi: number) => {
-      allEvents.push({ agent: p.agent || p.agent_name || "Agent", platform: p.platform || "", action: p.action || p.action_type || "POST", content: p.content || p.text || p.result?.content || "", round: roundIdx, idx: pi });
+      allEvents.push({ agent: p.agent || p.agent_name || "Agent", platform: p.platform || "", action: p.action || p.action_type || "POST", content: p.content || p.text || p.result?.content || "", outcome: p.outcome || p.stance || "", round: roundIdx, idx: pi });
     });
   });
 
@@ -183,6 +185,81 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
     // 3. Default binary Yes / No
     return ["Yes", "No"];
   })();
+
+  const rawHemloModel =
+    data.result?.outcome_probabilities ||
+    data.result?.probabilityModel?.hemloModel ||
+    data.analysis_data?.probabilityModel?.hemloModel;
+
+  const explicitOptions = data.result?.options || data.options;
+  const explicitOptionLabels: string[] = Array.isArray(explicitOptions)
+    ? explicitOptions
+        .map((option: any) => typeof option === "string" ? option : String(option?.label || option?.name || "").trim())
+        .filter(Boolean)
+    : [];
+  const outcomeEntries: Array<{ label: string; pct: number }> = (() => {
+    if (rawHemloModel && typeof rawHemloModel === "object") {
+      const entries = Object.entries(rawHemloModel)
+        .map(([label, value]) => ({ label, pct: Math.round(Number(value) || 0) }))
+        .filter((entry) => entry.label);
+      const modelTotal = entries.reduce((sum, entry) => sum + entry.pct, 0);
+      if (entries.length >= 2 && modelTotal > 0) return entries;
+    }
+
+    if (explicitOptionLabels.length > 2) {
+      const counts: Record<string, number> = {};
+      logEntries.forEach((r: any) => {
+        const roundCounts = r?.outcome_counts || {};
+        Object.entries(roundCounts).forEach(([label, count]) => {
+          counts[label] = (counts[label] || 0) + Number(count || 0);
+        });
+      });
+      allEvents.forEach((event: any) => {
+        if (event.outcome && counts[event.outcome] === undefined) counts[event.outcome] = 0;
+      });
+      const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+      if (total > 0) {
+        return explicitOptionLabels.map((label: string) => ({
+          label,
+          pct: Math.round(((counts[label] || 0) / total) * 100),
+        }));
+      }
+
+      // Transitional fallback for old saved runs: options were saved, but Modal still
+      // returned binary YES/NO logs. Keep percentages aligned with the visible volume.
+      const binaryTotal = totalYes + totalNo;
+      if (binaryTotal > 0) {
+        return explicitOptionLabels.map((label: string, i: number) => ({
+          label,
+          pct: i === 0 ? Math.round((totalYes / binaryTotal) * 100) : i === 1 ? Math.round((totalNo / binaryTotal) * 100) : 0,
+        }));
+      }
+
+      return explicitOptionLabels.map((label: string) => ({
+        label,
+        pct: 0,
+      }));
+    }
+
+    return [
+      { label: outcomeLabels[0], pct: hemloPct !== null ? Math.round(hemloPct) : 0 },
+      { label: outcomeLabels[1], pct: hemloPct !== null ? 100 - Math.round(hemloPct) : 0 },
+    ];
+  })();
+
+  const outcomeVoteTotals: Record<string, number> = {};
+  logEntries.forEach((r: any) => {
+    const roundCounts = r?.outcome_counts || {};
+    Object.entries(roundCounts).forEach(([label, count]) => {
+      outcomeVoteTotals[label] = (outcomeVoteTotals[label] || 0) + Number(count || 0);
+    });
+  });
+  if (Object.keys(outcomeVoteTotals).length === 0 && totalYes + totalNo > 0) {
+    outcomeVoteTotals[outcomeEntries[0]?.label || "Yes"] = totalYes;
+    outcomeVoteTotals[outcomeEntries[1]?.label || "No"] = totalNo;
+  }
+  const totalOutcomeVotes = Object.values(outcomeVoteTotals).reduce((sum, count) => sum + count, 0);
+  const outcomePalette = ["#34d399", "#fb7185", "#60a5fa", "#fbbf24", "#c084fc", "#f472b6", "#2dd4bf", "#a3e635"];
 
   const reportText: string = data.result?.report_text || data.report_text || data.result?.report?.report_text || data.result?.markdown_content || "";
 
@@ -234,122 +311,189 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
     if (data.created_at) setDateStr(new Date(data.created_at).toLocaleString());
   }, [data.created_at]);
 
+  const topOutcomeEntry = outcomeEntries.reduce(
+    (best, entry) => (entry.pct > best.pct ? entry : best),
+    outcomeEntries[0] || { label: "Outcome", pct: hemloPct ?? 0 }
+  );
+  const maxOutcomePct = Math.max(1, ...outcomeEntries.map((entry) => Math.max(0, Number(entry.pct) || 0)));
+  const confidenceTone =
+    backendConfidence === "HIGH"
+      ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
+      : backendConfidence === "LOW"
+        ? "border-rose-400/25 bg-rose-400/10 text-rose-200"
+        : "border-sky-400/25 bg-sky-400/10 text-sky-200";
+  const timingSteps = Object.entries(stepTiming).filter(([key]) => key !== "total");
+  const timingLabels: Record<string, string> = {
+    init: "Init",
+    ontology: "Ontology",
+    graph_build: "Graph",
+    agents: "Agents",
+    config: "Config",
+    simulation: "Rounds",
+    verdict: "Verdict",
+  };
+  const marketInfo = data.result?.marketInfo || data.analysis_data?.predictionMarket || {};
+  const marketImage = marketStats.image || marketInfo.image || marketInfo.icon || "";
+  const hasPolymarketPanel = baseDomain.toLowerCase() === "polymarket" && marketSlug;
+  const visibleFactors = keyFactors.slice(0, 5);
+  const visiblePersonas = personaHighlights.slice(0, 4);
+  const visibleAgents = agentList.slice(0, 10);
+
   return (
-    <div className="h-screen bg-[#050505] text-white font-sans selection:bg-blue-500/30 overflow-hidden flex flex-col pt-10">
-      <div className="flex-1 w-full max-w-[1600px] mx-auto px-6 pb-10 min-h-0">
-        {/* 70 / 30 SPLIT */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full">
+    <div className="min-h-screen bg-[#070807] text-zinc-100 font-sans selection:bg-emerald-500/30 overflow-x-hidden pt-8 pb-12">
+      <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
           {/* ── LEFT COLUMN (~66%) ──────────────────────────────────────── */}
-          <div className="lg:col-span-8 flex flex-col gap-6 h-full overflow-y-auto sim-scroll pr-2 pb-10">
+          <div className="lg:col-span-8 flex flex-col gap-5 min-w-0">
 
             {/* Question Header */}
             <motion.div initial={{opacity:0, y:16}} animate={{opacity:1, y:0}}>
-              <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-5 mb-4 bg-white p-5 sm:p-6 rounded-none shadow-[0_8px_30px_rgba(255,255,255,0.1)]">
+              <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-5 mb-4 bg-[#101310]/90 border border-white/10 p-5 sm:p-6 rounded-lg shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
                 {marketStats.image && (
-                  <img src={marketStats.image} alt="" className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover border border-black/10 shrink-0 shadow-sm" onError={e => e.currentTarget.style.display = 'none'} />
+                  <img src={marketStats.image} alt="" className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg object-cover border border-white/10 shrink-0 shadow-sm" onError={e => e.currentTarget.style.display = 'none'} />
                 )}
-                <div className="flex flex-col gap-2">
-                  <h1 className="text-3xl md:text-4xl xl:text-5xl font-black leading-[1.1] tracking-tight text-black pb-1">
+                <div className="flex flex-col gap-4 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                    <span className="rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1 text-zinc-300">{baseDomain || "simulation"}</span>
+                    <span>{dateStr || "Loading date..."}</span>
+                  </div>
+                  <h1 className="text-2xl md:text-3xl xl:text-4xl font-black leading-[1.08] tracking-tight text-white pb-1">
                     &ldquo;{data.scenario}&rdquo;
                   </h1>
+                  <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-end">
+                    <div>
+                      {backendConfidence && (
+                        <span className={`inline-flex items-center border rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] ${confidenceTone}`}>
+                          {backendConfidence} confidence
+                        </span>
+                      )}
+                      <p className="mt-3 max-w-3xl text-sm md:text-[15px] leading-7 text-zinc-300">
+                        {verdictLoading ? "Synthesizing consensus..." : verdict || backendVerdict || "Verdict will appear once the simulation report is available."}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 md:min-w-[160px]">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200/70">Leading</div>
+                      <div className="mt-1 truncate text-sm font-black text-emerald-100">{topOutcomeEntry.label}</div>
+                      <div className="text-3xl font-black tracking-tight text-emerald-300">{Math.round(topOutcomeEntry.pct || 0)}%</div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 text-sm font-mono text-zinc-500 uppercase tracking-wide">
-                <span className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 shadow-inner">
-                  {baseDomain}
-                </span>
-                <span>{dateStr || "Loading date..."}</span>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                <Link href="/history" className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.06]">
+                  <ArrowLeft size={14} /> History
+                </Link>
+                {hasPolymarketPanel && (
+                  <button
+                    onClick={() => setShowPolymarket(!showPolymarket)}
+                    className="inline-flex items-center gap-2 rounded-md border border-sky-400/20 bg-sky-400/10 px-3 py-2 text-sky-200 transition hover:bg-sky-400/15"
+                  >
+                    <ExternalLink size={14} /> {showPolymarket ? "Hide Market" : "Market Data"}
+                  </button>
+                )}
               </div>
             </motion.div>
 
             {/* ① Probability Spread (Moved from Right Column) */}
-            <motion.div initial={{opacity:0, y:16}} animate={{opacity:1, y:0}} transition={{delay:0.1}} className="pt-4 pb-6 w-[94%] xl:w-[96%] self-center">
-              <div className="text-[11px] font-bold tracking-widest text-zinc-500 uppercase mb-6">Hemlo Probability</div>
-
-              {/* Option 1 */}
-              <div className="mb-7">
-                <div className="flex justify-between items-baseline mb-3">
-                  <span className="text-xs font-bold tracking-widest text-emerald-400/80 uppercase">{outcomeLabels[0]}</span>
-                  <span className="text-4xl font-black text-emerald-400 drop-shadow-[0_0_16px_rgba(52,211,153,0.5)] tracking-tighter px-3 py-1 bg-emerald-400/10 rounded-xl border border-emerald-400/20">
-                    {hemloPct !== null ? `${Math.round(hemloPct)}%` : "—"}
-                  </span>
+            <motion.div initial={{opacity:0, y:16}} animate={{opacity:1, y:0}} transition={{delay:0.1}} className="rounded-lg border border-white/10 bg-[#0d100f]/90 p-5 sm:p-6 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+                <div>
+                  <div className="text-[11px] font-bold tracking-[0.18em] text-zinc-500 uppercase">Hemlo Probability</div>
+                  <div className="mt-1 text-sm text-zinc-400">{totalEvents} agent actions across {logEntries.length} rounds</div>
                 </div>
-                <div className="h-3 bg-zinc-900 rounded-full overflow-hidden border border-white/5">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: hemloPct !== null ? `${Math.round(hemloPct)}%` : "0%" }}
-                    transition={{ duration: 1.0, ease: "easeOut" }}
-                    className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.4)]"
-                  />
+                <div className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-right">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Votes</div>
+                  <div className="text-lg font-black text-white">{totalOutcomeVotes || totalEvents}</div>
                 </div>
               </div>
 
-              {/* Option 2 */}
-              <div className="mb-8">
-                <div className="flex justify-between items-baseline mb-3">
-                  <span className="text-xs font-bold tracking-widest text-rose-400/80 uppercase">{outcomeLabels[1]}</span>
-                  <span className="text-4xl font-black text-rose-400 drop-shadow-[0_0_16px_rgba(244,63,94,0.5)] tracking-tighter px-3 py-1 bg-rose-400/10 rounded-xl border border-rose-400/20">
-                    {hemloPct !== null ? `${100 - Math.round(hemloPct)}%` : "—"}
-                  </span>
-                </div>
-                <div className="h-3 bg-zinc-900 rounded-full overflow-hidden border border-white/5">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: hemloPct !== null ? `${100 - Math.round(hemloPct)}%` : "0%" }}
-                    transition={{ duration: 1.0, ease: "easeOut", delay: 0.1 }}
-                    className="h-full bg-gradient-to-r from-rose-500 to-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.4)]"
-                  />
-                </div>
-              </div>
+              {outcomeEntries.map((entry, i) => {
+                const color = outcomePalette[i % outcomePalette.length];
+                const pct = Math.max(0, Math.min(100, Math.round(entry.pct || 0)));
+                return (
+                  <div key={`${entry.label}-${i}`} className="mb-3 rounded-lg border border-white/8 bg-white/[0.025] px-4 py-3 last:mb-0">
+                    <div className="flex justify-between items-center gap-4 mb-2">
+                      <span className="text-sm font-bold truncate text-zinc-100">
+                        {entry.label}
+                      </span>
+                      <span
+                        className="text-xl sm:text-2xl font-black tracking-tight"
+                        style={{
+                          color,
+                          textShadow: `0 0 16px ${color}80`,
+                        }}
+                      >
+                        {hemloPct !== null || rawHemloModel ? `${pct}%` : "—"}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.max(3, (pct / maxOutcomePct) * 100)}%` }}
+                        transition={{ duration: 1.0, ease: "easeOut", delay: i * 0.05 }}
+                        className="h-full"
+                        style={{ background: `linear-gradient(90deg, ${color}99, ${color})`, boxShadow: `0 0 10px ${color}66` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
 
               {/* Agent Volume Bar — BIG */}
-              <div className="mt-2 p-5 bg-zinc-900/60 border border-white/8 rounded-2xl">
-                <div className="text-[11px] font-bold tracking-widest text-zinc-500 uppercase mb-4">Agent Volume ({totalEvents} actions)</div>
-                <div className="h-8 bg-zinc-900 rounded-xl overflow-hidden flex border border-white/5 shadow-inner mb-4">
-                  {totalYes + totalNo > 0 ? (
-                    <>
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${(totalYes / (totalYes + totalNo)) * 100}%` }}
-                        transition={{ duration: 1.2, ease: "easeOut" }}
-                        className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400"
-                      />
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${(totalNo / (totalYes + totalNo)) * 100}%` }}
-                        transition={{ duration: 1.2, ease: "easeOut" }}
-                        className="h-full bg-gradient-to-r from-rose-500 to-rose-600"
-                      />
-                    </>
+              <div className="mt-4 rounded-lg border border-white/8 bg-black/20 p-4">
+                <div className="text-[11px] font-bold tracking-[0.18em] text-zinc-500 uppercase mb-3">Agent Volume</div>
+                <div className="h-4 bg-black/40 rounded-md overflow-hidden flex border border-white/5 shadow-inner mb-3">
+                  {totalOutcomeVotes > 0 ? (
+                    outcomeEntries.map((entry, i) => {
+                      const count = outcomeVoteTotals[entry.label] || 0;
+                      const color = outcomePalette[i % outcomePalette.length];
+                      return (
+                        <motion.div
+                          key={`${entry.label}-volume`}
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(count / totalOutcomeVotes) * 100}%` }}
+                          transition={{ duration: 1.2, ease: "easeOut", delay: i * 0.03 }}
+                          className="h-full"
+                          style={{ background: `linear-gradient(90deg, ${color}cc, ${color})` }}
+                        />
+                      );
+                    })
                   ) : (
                     <div className="w-full h-full bg-zinc-800 flex items-center justify-center">
                       <span className="text-[10px] text-zinc-600 font-mono">No agent data yet</span>
                     </div>
                   )}
                 </div>
-                <div className="flex justify-between text-[13px] font-mono font-black">
-                  <span className="text-emerald-400 flex items-center gap-2 bg-emerald-400/10 px-3 py-1.5 rounded-lg border border-emerald-400/20">
-                    <TrendingUp size={13}/> {totalYes} {outcomeLabels[0]}
-                  </span>
-                  <span className="text-rose-400 flex items-center gap-2 bg-rose-400/10 px-3 py-1.5 rounded-lg border border-rose-400/20">
-                    {outcomeLabels[1]} {totalNo} <TrendingDown size={13}/>
-                  </span>
+                <div className="flex flex-wrap gap-2 text-[12px] font-mono font-black">
+                  {outcomeEntries.map((entry, i) => {
+                    const color = outcomePalette[i % outcomePalette.length];
+                    return (
+                      <span
+                        key={`${entry.label}-count`}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-md border"
+                        style={{ color, background: `${color}1f`, borderColor: `${color}40` }}
+                      >
+                        {i === 0 ? <TrendingUp size={13}/> : null}
+                        {outcomeVoteTotals[entry.label] || 0} {entry.label}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             </motion.div>
 
             {/* ── Key Factors ── */}
-            {keyFactors.length > 0 && (
-              <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:0.18}} className="pt-2 w-[94%] xl:w-[96%] self-center">
-                <h2 className="text-xl font-black mb-4 flex items-center gap-3 tracking-tight">
+            {visibleFactors.length > 0 && (
+              <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:0.18}} className="rounded-lg border border-white/10 bg-[#0d100f]/80 p-5">
+                <h2 className="text-lg font-black mb-4 flex items-center gap-3 tracking-tight">
                   <span className="text-amber-400">⚡</span>
                   Key Factors
                 </h2>
                 <div className="flex flex-col gap-2">
-                  {keyFactors.map((f, i) => (
-                    <div key={i} className="flex items-start gap-3 bg-zinc-900/50 border border-white/5 rounded-xl px-4 py-3">
+                  {visibleFactors.map((f, i) => (
+                    <div key={i} className="flex items-start gap-3 rounded-md border border-white/5 bg-white/[0.025] px-4 py-3">
                       <span className="text-amber-400 font-black text-sm shrink-0 mt-0.5">{i + 1}.</span>
                       <span className="text-sm text-zinc-300 leading-relaxed">{f}</span>
                     </div>
@@ -359,17 +503,17 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
             )}
 
             {/* ── Notable Personas ── */}
-            {personaHighlights.length > 0 && (
-              <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:0.22}} className="pt-2 w-[94%] xl:w-[96%] self-center">
-                <h2 className="text-xl font-black mb-4 flex items-center gap-3 tracking-tight">
+            {visiblePersonas.length > 0 && (
+              <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:0.22}} className="rounded-lg border border-white/10 bg-[#0d100f]/80 p-5">
+                <h2 className="text-lg font-black mb-4 flex items-center gap-3 tracking-tight">
                   <span className="text-purple-400">👤</span>
                   Notable Personas
                 </h2>
-                <div className="flex flex-col gap-3">
-                  {personaHighlights.map((p, i) => (
-                    <div key={i} className="bg-zinc-900/50 border border-white/5 rounded-xl px-4 py-4 flex items-start gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {visiblePersonas.map((p, i) => (
+                    <div key={i} className="rounded-md border border-white/5 bg-white/[0.025] px-4 py-4 flex items-start gap-4">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black shrink-0 shadow-lg ${
-                        p.stance === 'YES' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        p.stance === 'YES' || p.stance === outcomeEntries[0]?.label ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
                       }`}>
                         {(p.name || "?").split(" ").map((n:string) => n[0]).slice(0,2).join("").toUpperCase()}
                       </div>
@@ -377,8 +521,8 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="text-sm font-bold text-white">{p.name}</span>
                           <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-500">{p.role}</span>
-                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full tracking-widest ${
-                            p.stance === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md tracking-widest ${
+                            p.stance === 'YES' || p.stance === outcomeEntries[0]?.label ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
                           }`}>{p.stance}</span>
                         </div>
                         <p className="text-xs text-zinc-400 leading-relaxed">{p.impact}</p>
@@ -390,15 +534,15 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
             )}
 
             {/* ── Agent List (collapsed) ── */}
-            {agentList.length > 0 && (
-              <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:0.24}} className="pt-2 w-[94%] xl:w-[96%] self-center">
-                <h2 className="text-xl font-black mb-4 flex items-center gap-3 tracking-tight">
+            {visibleAgents.length > 0 && (
+              <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:0.24}} className="rounded-lg border border-white/10 bg-[#0d100f]/80 p-5">
+                <h2 className="text-lg font-black mb-4 flex items-center gap-3 tracking-tight">
                   <span className="text-blue-400">🤖</span>
                   Participating Agents ({agentList.length})
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {agentList.slice(0, 12).map((a, i) => (
-                    <div key={i} className="bg-zinc-900/40 border border-white/5 rounded-xl px-3 py-2.5 flex items-center gap-3">
+                  {visibleAgents.map((a, i) => (
+                    <div key={i} className="rounded-md border border-white/5 bg-white/[0.025] px-3 py-2.5 flex items-center gap-3">
                       <div className="w-7 h-7 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center text-[10px] font-black text-zinc-400 shrink-0">
                         {(a.name || "?")[0].toUpperCase()}
                       </div>
@@ -413,14 +557,14 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
             )}
 
             {/* Reasoning Engine */}
-            <motion.div initial={{opacity:0, x:-20}} animate={{opacity:1, x:0}} transition={{delay:0.15}} className="flex flex-col flex-1 w-[94%] xl:w-[96%] self-center pb-8">
-              <h2 className="text-xl font-black mb-4 mt-6 flex items-center gap-3 tracking-tight">
-                <Terminal size={20} className="text-blue-500" />
-                The Reasoning Engine
+            <motion.div initial={{opacity:0, x:-20}} animate={{opacity:1, x:0}} transition={{delay:0.15}} className="flex flex-col rounded-lg border border-white/10 bg-[#0d100f]/80 p-5">
+              <h2 className="text-lg font-black mb-4 flex items-center gap-3 tracking-tight">
+                <Terminal size={18} className="text-sky-300" />
+                Agent Evidence
               </h2>
 
               {/* Tab Bar */}
-              <div className="flex gap-2 mb-4 bg-zinc-900/60 p-1.5 rounded-xl w-fit border border-white/5 backdrop-blur-sm overflow-x-auto max-w-full sim-scroll">
+              <div className="flex gap-2 mb-4 bg-black/25 p-1.5 rounded-lg w-fit border border-white/5 backdrop-blur-sm overflow-x-auto max-w-full sim-scroll">
                 {[
                   { id: "timeline", label: "Agent Timeline" },
                   { id: "stream", label: "Raw Event Stream" }
@@ -428,7 +572,7 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
                   <button
                     key={t.id}
                     onClick={() => setActiveTab(t.id as any)}
-                    className={`px-5 sm:px-7 py-2 rounded-lg text-sm font-bold tracking-wide transition-all duration-300 whitespace-nowrap ${
+                    className={`px-5 sm:px-7 py-2 rounded-md text-sm font-bold tracking-wide transition-all duration-300 whitespace-nowrap ${
                       activeTab === t.id
                         ? 'bg-zinc-800 text-white shadow-md border border-white/10'
                         : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5 border border-transparent'
@@ -440,18 +584,18 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
               </div>
 
               {/* Tab Content */}
-              <div className="rounded-2xl border border-white/10 bg-[#0a0a0a] overflow-hidden relative min-h-[600px] shadow-2xl">
+              <div className="rounded-lg border border-white/10 bg-[#080a09] overflow-hidden relative min-h-[440px] shadow-[0_18px_60px_rgba(0,0,0,0.24)]">
 
                 {/* Tab 2: Agent Timeline */}
                 {activeTab === "timeline" && (
-                  <div className="absolute inset-0 overflow-y-auto p-6 sim-scroll bg-[#0c0f16]">
+                  <div className="absolute inset-0 overflow-y-auto p-4 sm:p-5 sim-scroll bg-[#090c0b]">
                     {logEntries.length === 0 && <div className="text-center text-zinc-600 mt-20 font-mono">No timeline events compiled.</div>}
                     <div className="space-y-4">
                       {logEntries.map((r: any, i: number) => {
                         const isOpen = openRounds[i];
                         return (
-                          <div key={i} className="bg-black/40 rounded-xl border border-white/5 overflow-hidden transition-colors hover:border-white/10 shadow-sm">
-                            <div onClick={() => toggleRound(i)} className="p-5 cursor-pointer flex items-center gap-4 select-none">
+                          <div key={i} className="bg-black/30 rounded-lg border border-white/5 overflow-hidden transition-colors hover:border-white/10 shadow-sm">
+                            <div onClick={() => toggleRound(i)} className="p-4 cursor-pointer flex items-center gap-4 select-none">
                               <div className={`p-1.5 rounded-full transition-colors ${isOpen ? 'bg-zinc-800 text-white' : 'text-zinc-500 bg-zinc-900/50'}`}>
                                 {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                               </div>
@@ -460,9 +604,15 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
                               </span>
                               <div className="ml-auto flex items-center gap-3 sm:gap-6 font-mono text-[11px] tracking-widest font-semibold">
                                 <span className="text-zinc-500 hidden sm:inline">{r?.posts || 0} EVENTS</span>
-                                <div className="flex gap-2">
-                                  <span className="text-emerald-400 bg-emerald-400/10 px-2.5 py-1 rounded-md border border-emerald-400/20 shadow-inner">{r?.yes || 0} ↑</span>
-                                  <span className="text-rose-400 bg-rose-400/10 px-2.5 py-1 rounded-md border border-rose-400/20 shadow-inner">{r?.no || 0} ↓</span>
+                                <div className="flex gap-2 flex-wrap justify-end">
+                                  {Object.entries(r?.outcome_counts || { [outcomeEntries[0]?.label || "Yes"]: r?.yes || 0, [outcomeEntries[1]?.label || "No"]: r?.no || 0 }).slice(0, 4).map(([label, count]: any, ci) => {
+                                    const color = outcomePalette[ci % outcomePalette.length];
+                                    return (
+                                      <span key={label} className="px-2.5 py-1 rounded-md border shadow-inner" style={{ color, background: `${color}1a`, borderColor: `${color}33` }}>
+                                        {count || 0} {label}
+                                      </span>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             </div>
@@ -476,6 +626,7 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
                                         <div className="w-2 h-2 rounded-full bg-blue-500/50 group-hover:bg-blue-400 transition-colors shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
                                         <span className="text-[15px] font-bold text-zinc-200">{p.agent}</span>
                                         <span className="font-mono text-[9px] font-bold text-black bg-zinc-300 px-2 py-0.5 rounded uppercase tracking-widest">{p.action || "ACT"}</span>
+                                        {(p.outcome || p.stance) && <span className="font-mono text-[9px] font-bold text-zinc-200 bg-zinc-800 px-2 py-0.5 rounded uppercase tracking-widest">{p.outcome || p.stance}</span>}
                                       </div>
                                       <div className="text-[14px] text-zinc-400 sm:pl-5 leading-relaxed">{p.content || p.text || "—"}</div>
                                     </div>
@@ -511,6 +662,7 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
                             <div className="flex items-center gap-3 mb-2">
                               <span className="text-[13px] font-bold text-zinc-300">{ev.agent}</span>
                               <span className="text-[10px] text-zinc-600 tracking-widest font-bold">RD{ev.round}</span>
+                              {ev.outcome && <span className="text-[10px] text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded tracking-widest font-bold uppercase">{ev.outcome}</span>}
                             </div>
                             <div className="text-[13px] text-zinc-400/90 leading-[1.7] whitespace-pre-wrap">{ev.content}</div>
                           </div>
@@ -526,20 +678,20 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
           {/* ── RIGHT COLUMN (~33%) ─────────────────────────────────────── */}
           <motion.div
             initial={{opacity:0, x:20}} animate={{opacity:1, x:0}} transition={{delay:0.2}}
-            className="lg:col-span-4 flex flex-col h-full bg-white"
+            className="lg:col-span-4 lg:sticky lg:top-6 flex flex-col gap-4 rounded-lg border border-white/10 bg-[#101310]/90 p-5 max-h-[calc(100vh-3rem)] overflow-y-auto sim-scroll shadow-[0_24px_80px_rgba(0,0,0,0.28)]"
             style={{
-              paddingRight: "clamp(16px, 3vw, 40px)",
+              paddingRight: "clamp(16px, 2vw, 24px)",
               paddingLeft: "clamp(16px, 2vw, 24px)",
-              paddingTop: 32,
+              paddingTop: 20,
             }}
           >
 
             {/* Toggle button — only shown for Polymarket markets */}
             {baseDomain.toLowerCase() === "polymarket" && marketSlug && (
-              <div className="flex justify-end mb-4 shrink-0">
+              <div className="flex justify-end shrink-0">
                 <button
                   onClick={() => setShowPolymarket(!showPolymarket)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-full text-xs font-bold tracking-tight transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-400/10 hover:bg-sky-400/15 text-sky-200 border border-sky-400/20 rounded-md text-xs font-bold tracking-tight transition-colors"
                 >
                   {showPolymarket ? <ArrowLeft size={12} /> : <ExternalLink size={12} />}
                   {showPolymarket ? "Back to Simulation" : "View Polymarket Data"}
@@ -548,7 +700,7 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
             )}
 
             {/* Sliding panel container */}
-            <div className="relative flex-1 min-h-0 overflow-hidden">
+            <div className="relative flex-1 min-h-[420px] overflow-hidden">
               <AnimatePresence mode="wait">
 
                 {/* ── Polymarket iframe panel ── */}
@@ -575,13 +727,13 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
                           )}
                           <div>
                             <div className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">POLYMARKET LIVE</div>
-                            <div className="text-sm font-black text-black leading-snug">{polyMarketData.title}</div>
+                            <div className="text-sm font-black text-white leading-snug">{polyMarketData.title}</div>
                           </div>
                         </div>
 
                         {/* Price Chart */}
                         {chartLoading ? (
-                          <div className="h-28 bg-zinc-50 rounded-xl flex items-center justify-center">
+                          <div className="h-28 bg-white/[0.04] rounded-lg flex items-center justify-center">
                             <Loader2 size={16} className="animate-spin text-zinc-400" />
                           </div>
                         ) : chartHistory.length > 2 ? (() => {
@@ -601,7 +753,7 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
                           const isUp = lastP >= firstP;
                           const color = isUp ? '#22c55e' : '#ef4444';
                           return (
-                            <div className="rounded-xl overflow-hidden border border-black/6 bg-zinc-50 p-3">
+                            <div className="rounded-lg overflow-hidden border border-white/10 bg-white/[0.035] p-3">
                               <div className="flex justify-between items-center mb-2">
                                 <span className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase">YES — 7 day price</span>
                                 <span className={`text-xs font-black ${isUp ? 'text-emerald-600' : 'text-rose-500'}`}>
@@ -626,7 +778,7 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
 
                         {/* Markets / Outcomes */}
                         {(polyMarketData.markets || []).map((mkt: any, mi: number) => (
-                          <div key={mi} className="border border-black/8 rounded-xl p-4">
+                          <div key={mi} className="border border-white/10 rounded-lg p-4 bg-white/[0.025]">
                             {polyMarketData.markets.length > 1 && (
                               <div className="text-[11px] text-zinc-500 font-medium mb-3 leading-snug">{mkt.question}</div>
                             )}
@@ -634,12 +786,12 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
                               {(mkt.outcomes || []).map((o: any, oi: number) => (
                                 <div key={oi}>
                                   <div className="flex justify-between items-center mb-1">
-                                    <span className="text-xs font-bold text-black">{o.label}</span>
+                                    <span className="text-xs font-bold text-zinc-100">{o.label}</span>
                                     <span className={`text-sm font-black ${
                                       o.label.toLowerCase() === 'yes' ? 'text-emerald-600' : 'text-rose-500'
                                     }`}>{o.prob}%</span>
                                   </div>
-                                  <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
+                                  <div className="h-2 bg-black/40 rounded-full overflow-hidden">
                                     <motion.div
                                       initial={{ width: 0 }}
                                       animate={{ width: `${o.prob}%` }}
@@ -656,21 +808,21 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
                             </div>
                             {/* Mini stats */}
                             <div className="grid grid-cols-2 gap-2 mt-4">
-                              <div className="bg-zinc-50 rounded-lg p-2.5">
+                              <div className="bg-white/[0.04] rounded-md p-2.5">
                                 <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Volume</div>
-                                <div className="text-sm font-black text-black">{mkt.volume}</div>
+                                <div className="text-sm font-black text-zinc-100">{mkt.volume}</div>
                               </div>
-                              <div className="bg-zinc-50 rounded-lg p-2.5">
+                              <div className="bg-white/[0.04] rounded-md p-2.5">
                                 <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Liquidity</div>
-                                <div className="text-sm font-black text-black">
+                                <div className="text-sm font-black text-zinc-100">
                                   {mkt.liquidity >= 1000 ? `$${(mkt.liquidity/1000).toFixed(0)}K` : `$${Math.round(mkt.liquidity)}`}
                                 </div>
                               </div>
-                              <div className="bg-zinc-50 rounded-lg p-2.5">
+                              <div className="bg-zinc-50 rounded-md p-2.5">
                                 <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Best Bid</div>
                                 <div className="text-sm font-black text-black">{Math.round(mkt.bestBid * 100)}¢</div>
                               </div>
-                              <div className="bg-zinc-50 rounded-lg p-2.5">
+                              <div className="bg-zinc-50 rounded-md p-2.5">
                                 <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Best Ask</div>
                                 <div className="text-sm font-black text-black">{Math.round(mkt.bestAsk * 100)}¢</div>
                               </div>
@@ -687,24 +839,24 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
                         )}
 
                         {/* Market stats from simulation record */}
-                        <div className="border-t border-black/6 pt-4">
+                        <div className="border-t border-white/10 pt-4">
                           <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-3">Market Snapshot</div>
                           <div className="grid grid-cols-2 gap-2">
-                            <div className="bg-zinc-50 rounded-lg p-2.5">
+                            <div className="bg-white/[0.04] rounded-md p-2.5">
                               <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Volume</div>
-                              <div className="text-sm font-black text-black">{marketStats.volume}</div>
+                              <div className="text-sm font-black text-zinc-100">{marketStats.volume}</div>
                             </div>
-                            <div className="bg-zinc-50 rounded-lg p-2.5">
+                            <div className="bg-white/[0.04] rounded-md p-2.5">
                               <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Liquidity</div>
-                              <div className="text-sm font-black text-black">{marketStats.liquidity}</div>
+                              <div className="text-sm font-black text-zinc-100">{marketStats.liquidity}</div>
                             </div>
-                            <div className="bg-zinc-50 rounded-lg p-2.5">
+                            <div className="bg-white/[0.04] rounded-md p-2.5">
                               <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Last Trade</div>
-                              <div className="text-sm font-black text-black">{marketStats.lastTrade}</div>
+                              <div className="text-sm font-black text-zinc-100">{marketStats.lastTrade}</div>
                             </div>
-                            <div className="bg-zinc-50 rounded-lg p-2.5">
+                            <div className="bg-white/[0.04] rounded-md p-2.5">
                               <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Status</div>
-                              <div className="text-sm font-black text-black">{marketStats.timeLeft}</div>
+                              <div className="text-sm font-black text-zinc-100">{marketStats.timeLeft}</div>
                             </div>
                           </div>
                         </div>
@@ -739,9 +891,50 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
                     className="absolute inset-0 overflow-y-auto sim-scroll pb-10 flex flex-col"
                   >
 
-                    {/* ② Verdict */}
-                    <div className="pb-8">
-                      <div className="bg-white p-5 sm:p-6 rounded-none shadow-none border border-black/8">
+                    {/* ② Pipeline Timing Breakdown */}
+                    {Object.keys(stepTiming).length > 1 && (() => {
+                      const steps = Object.entries(stepTiming).filter(([k]) => k !== "total");
+                      const total = stepTiming.total || 1;
+                      const STEP_LABELS: Record<string, string> = {
+                        init: "Init & Auth",
+                        ontology: "Ontology",
+                        graph_build: "Graph Build",
+                        agents: "Agent Profiles",
+                        config: "Sim Config",
+                        simulation: "Simulation",
+                        verdict: "Verdict",
+                      };
+                      return (
+                        <div className="mb-4 border border-white/10 rounded-lg overflow-hidden bg-white/[0.025]">
+                          <div className="bg-white/[0.04] px-4 py-3 border-b border-white/8 flex items-center justify-between">
+                            <span className="text-[10px] font-black tracking-widest uppercase text-zinc-500">⏱ Pipeline Timing</span>
+                            <span className="text-xs font-black text-zinc-200">{total}s total</span>
+                          </div>
+                          <div className="p-3 flex flex-col gap-2">
+                            {steps.map(([key, secs]) => {
+                              const pct = Math.min(100, Math.round((secs / total) * 100));
+                              const color = secs < 10 ? "bg-emerald-400" : secs < 30 ? "bg-amber-400" : "bg-rose-500";
+                              const textColor = secs < 10 ? "text-emerald-300" : secs < 30 ? "text-amber-300" : "text-rose-300";
+                              return (
+                                <div key={key}>
+                                  <div className="flex justify-between items-center mb-1">
+                                    <span className="text-[11px] font-semibold text-zinc-400">{STEP_LABELS[key] || key}</span>
+                                    <span className={`text-[11px] font-black ${textColor}`}>{secs}s</span>
+                                  </div>
+                                  <div className="h-1.5 bg-black/40 rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* ③ Verdict */}
+                    <div className="pb-4">
+                      <div className="rounded-lg border border-white/10 bg-white/[0.025] p-5 sm:p-6">
                         {backendConfidence && (
                           <div className={`inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-full mb-3 ${
                             backendConfidence === 'HIGH' ? 'bg-emerald-100 text-emerald-700' :
@@ -752,14 +945,14 @@ export default function SimulationResultInteractive({ initialData }: { initialDa
                           </div>
                         )}
                         {verdictLoading ? (
-                          <div className="flex items-center gap-3 text-zinc-500 text-sm">
+                          <div className="flex items-center gap-3 text-zinc-400 text-sm">
                             <Loader2 size={16} className="animate-spin text-blue-500" />
                             <span className="animate-pulse">Synthesizing consensus...</span>
                           </div>
                         ) : verdict ? (
-                          <p className="text-base md:text-lg font-bold text-black leading-relaxed">{verdict}</p>
+                          <p className="text-sm md:text-base font-semibold text-zinc-200 leading-7">{verdict}</p>
                         ) : (
-                          <p className="text-sm text-zinc-600 italic">
+                          <p className="text-sm text-zinc-500 italic">
                             {reportText ? "Generating verdict..." : "No report data available."}
                           </p>
                         )}

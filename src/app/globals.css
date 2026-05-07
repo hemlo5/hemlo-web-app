@@ -405,7 +405,26 @@ h1, h2, h3, h4, h5, h6 {
   .hide-mobile { display: none !important; }
   .mobile-only { display: block !important; }
 
-  /* Polymarket & Hot page main grids */
+  .home-hero-layout {
+    height: auto !important;
+    min-height: 380px !important;
+    padding: 0 16px !important;
+  }
+  .home-carousel-card {
+    flex-direction: column !important;
+    min-height: auto !important;
+  }
+  .home-carousel-left {
+    flex: none !important;
+    width: 100% !important;
+    padding: 20px !important;
+    border-right: none !important;
+    border-bottom: 1px solid #1f2330 !important;
+  }
+  .home-carousel-right {
+    padding: 20px !important;
+    min-height: 250px !important;
+  }
   .poly-layout { 
     grid-template-columns: 1fr !important; 
     height: auto !important;
@@ -517,3 +536,75 @@ h1, h2, h3, h4, h5, h6 {
 .sim-scroll::-webkit-scrollbar-track { background: transparent; }
 .sim-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
 .sim-scroll::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* Top simulation market cards */
+.top-sim-grid {
+  align-items: stretch;
+}
+
+.top-sim-card {
+  width: 100%;
+}
+
+.top-sim-thumb {
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+@media (max-width: 900px) {
+  .top-sim-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .top-sim-card {
+    grid-template-columns: 1fr !important;
+    min-height: 0 !important;
+  }
+
+  .top-sim-chart-pane {
+    border-left: none !important;
+    border-top: 1px solid #25303a !important;
+    min-height: 260px !important;
+    padding: 18px 18px 16px !important;
+  }
+
+  .top-sim-left {
+    padding: 18px !important;
+  }
+
+  .top-sim-chart {
+    min-height: 210px !important;
+    height: 210px !important;
+    flex: none !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .top-sim-grid {
+    gap: 12px !important;
+  }
+
+  .top-sim-card {
+    border-radius: 14px !important;
+  }
+
+  .top-sim-header {
+    gap: 10px !important;
+    margin-bottom: 14px !important;
+  }
+
+  .top-sim-thumb {
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 11px !important;
+  }
+
+  .top-sim-chart-pane {
+    min-height: 230px !important;
+    padding: 16px !important;
+  }
+
+  .top-sim-chart {
+    min-height: 175px !important;
+    height: 175px !important;
+  }
+}

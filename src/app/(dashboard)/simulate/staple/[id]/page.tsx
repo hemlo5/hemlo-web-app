@@ -537,7 +537,7 @@ Agents_Deployed: ${agentsDeployed.toLocaleString()}`}
           <Link href="/home" style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", border: "1px solid #1a1a1a", color: "#555", textDecoration: "none", fontSize: 11, fontWeight: 600, borderRadius: 6 }}>
             <ArrowLeft size={13} /> Back to Markets
           </Link>
-          <button onClick={() => router.push(`/simulate/mirofish?scenario=${encodeURIComponent(sim.topic)}&seedMode=auto`)}
+          <button onClick={() => router.push(`/simulate/mirofish?scenario=${encodeURIComponent(sim.topic)}`)}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", background: "#fff", border: "none", color: "#000", cursor: "pointer", fontFamily: "'Space Grotesk', sans-serif", fontSize: 11, fontWeight: 700, borderRadius: 6 }}>
             Run Deep Simulation
           </button>

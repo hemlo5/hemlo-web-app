@@ -6,16 +6,17 @@ import { motion, AnimatePresence } from "framer-motion"
 import {
   BarChart2, Globe, DollarSign, TrendingUp, TrendingDown,
   Zap, Activity, Radio, ArrowRight, ChevronDown, ChevronUp, Filter,
-  AlertTriangle, Flame, Clock, Search, X, ChevronLeft, ChevronRight
+  AlertTriangle, Flame, Clock, Search, X, ChevronLeft, ChevronRight, Link2, Bookmark
 } from "lucide-react"
 import Link from "next/link"
 import { HemloIndexChart, genIndexData } from "@/components/hemlo-index-chart"
 import { ExploreMarkets } from "@/components/explore-markets"
+import { HotSimulationsRail } from "@/components/hot-simulations-rail"
 import { MarketSideRow, useSection } from "@/components/market-sidebar"
 import { WorldMap } from "@/components/world-map"
 import { useTrendingTopics } from "@/lib/useTrendingTopics"
 import type { TrendingTopic, MarketStats } from "@/lib/types"
-import { createChart, ColorType, AreaSeries } from "lightweight-charts"
+import { createChart, ColorType, LineSeries } from "lightweight-charts"
 import { useRef } from "react"
 import { createClient } from "@/utils/supabase/client"
 
@@ -36,56 +37,182 @@ function formatEndsIn(endDateStr: string | undefined): string {
   return `${minutes}m`
 }
 
+function buildMirofishHref(t: any, domain = "polymarket") {
+  const yesProb = parseInt(t?.polymarketOdds || "50")
+  const rawOutcomes = Array.isArray(t?.outcomes) && t.outcomes.length > 0
+    ? t.outcomes
+    : [
+        { label: "Yes", prob: yesProb },
+        { label: "No", prob: 100 - yesProb },
+      ]
+  const outcomes = rawOutcomes
+    .filter((o: any) => o?.label)
+    .slice(0, 12)
+    .map((o: any, index: number) => ({
+      label: String(o.label).trim(),
+      prob: Number.isFinite(Number(o.prob)) ? Math.round(Number(o.prob)) : undefined,
+      tokenId: o.tokenId || o.clobTokenId || t?.clobTokenIds?.[index],
+    }))
+
+  const params = new URLSearchParams({
+    scenario: t?.topic || "",
+    domain,
+    marketType: t?.marketType || (outcomes.length > 2 ? "categorical" : "binary"),
+  })
+  if (outcomes.length >= 2) params.set("outcomes", JSON.stringify(outcomes))
+  if (t?.id) params.set("marketId", String(t.id))
+  if (t?.icon || t?.image) params.set("img", String(t.icon || t.image))
+  return `/simulate/mirofish?${params.toString()}`
+}
+
 function RealPolymarketChart({ t, isActive }: { t: any; isActive: boolean }) {
-  const [historyData, setHistoryData] = useState<any[] | null>(null)
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [seriesData, setSeriesData] = useState<Array<{ label: string; color: string; data: { time: number; value: number }[] }>>([])
   const [loading, setLoading] = useState(true)
+  const chartRef = useRef<any>(null)
+  const lineColors = ["#7db7ff", "#2d9cff", "#facc15", "#fb8c23"]
+  const chartOutcomes = useMemo(() => {
+    const rawOutcomes = (
+      t.marketType === "categorical" && Array.isArray(t.outcomes) && t.outcomes.length > 0
+        ? t.outcomes
+        : [
+            { label: "Yes", prob: parseInt(t.polymarketOdds || "50") },
+            { label: "No", prob: 100 - parseInt(t.polymarketOdds || "50") },
+          ]
+    ).slice(0, 4)
+
+    return rawOutcomes.map((outcome: any, index: number) => ({
+      label: String(outcome.label || `Outcome ${index + 1}`),
+      prob: Number(outcome.prob),
+      tokenId: String(outcome.tokenId || outcome.clobTokenId || t.clobTokenIds?.[index] || ""),
+    }))
+  }, [t])
+  const tokenKey = chartOutcomes.map((o) => `${o.tokenId}:${o.label}:${o.prob}`).join("|")
 
   useEffect(() => {
     if (!isActive) return
-    if (historyData) return
-
-    const tokenId = t.clobTokenIds?.[0] || t.id
-    if (!tokenId) {
+    const outcomesWithTokens = chartOutcomes.filter((o) => o.tokenId)
+    if (outcomesWithTokens.length === 0) {
+      setSeriesData([])
       setLoading(false)
       return
     }
 
+    let cancelled = false
     setLoading(true)
-    fetch(`/api/polymarket-history?tokenId=${tokenId}&interval=1w`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.history && d.history.length > 0) {
-          const hemloAvg = t.hemloOdds ?? 50
-          const formatted = d.history.map((pt: any, idx: number) => {
-            const ts = new Date(pt.t * 1000)
+
+    Promise.all(
+      outcomesWithTokens.map((outcome, index) =>
+        fetch(`/api/polymarket-history?tokenId=${encodeURIComponent(outcome.tokenId)}&interval=1w&fidelity=60`)
+          .then((r) => r.json())
+          .then((d) => ({ outcome, index, history: d.history || [] }))
+          .catch(() => ({ outcome, index, history: [] }))
+      )
+    )
+      .then((results) => {
+        if (cancelled) return
+        const nextSeries = results
+          .map(({ outcome, index, history }) => {
+            const seen = new Set<number>()
+            const points = history
+              .map((pt: any) => ({
+                time: Number(pt.t),
+                value: Math.max(0, Math.min(100, Number(pt.p) * 100)),
+              }))
+              .filter((pt: any) => Number.isFinite(pt.time) && Number.isFinite(pt.value))
+              .sort((a: any, b: any) => a.time - b.time)
+              .filter((pt: any) => {
+                if (seen.has(pt.time)) return false
+                seen.add(pt.time)
+                return true
+              })
+
+            const currentProb = Number(outcome.prob)
+            const now = Math.floor(Date.now() / 1000)
+            const last = points[points.length - 1]
+            if (last && Number.isFinite(currentProb) && now > last.time && Math.abs(last.value - currentProb) >= 0.2) {
+              points.push({ time: now, value: Math.max(0, Math.min(100, currentProb)) })
+            }
+
             return {
-              i: idx,
-              time: `${ts.getHours().toString().padStart(2, "0")}:${ts.getMinutes().toString().padStart(2, "0")}`,
-              timestamp: pt.t,
-              crowd: pt.p * 100,
-              hemlo: hemloAvg
+              label: outcome.label,
+              color: lineColors[index % lineColors.length],
+              data: points,
             }
           })
-          setHistoryData(formatted)
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [isActive, t, historyData])
+          .filter((series) => series.data.length >= 2)
 
-  const chartData = historyData || genIndexData(60, t.hemloOdds ?? 50, parseInt(t.polymarketOdds ?? "50"))
+        setSeriesData(nextSeries)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isActive, tokenKey])
+
+  useEffect(() => {
+    if (!chartContainerRef.current || loading || seriesData.length === 0) {
+      if (chartRef.current) { try { chartRef.current.remove() } catch {}; chartRef.current = null }
+      return
+    }
+
+    if (chartRef.current) { try { chartRef.current.remove() } catch {} }
+
+    const chart = createChart(chartContainerRef.current, {
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#7b8794", fontFamily: "Inter, sans-serif", fontSize: 11 },
+      grid: { vertLines: { visible: false }, horzLines: { color: "rgba(255,255,255,0.065)" } },
+      rightPriceScale: { borderVisible: false, alignLabels: true, scaleMargins: { top: 0.12, bottom: 0.12 }, minimumWidth: 52 },
+      timeScale: { borderVisible: false, timeVisible: false, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true },
+      localization: { priceFormatter: (v: number) => `${Math.round(v)}%` },
+      crosshair: {
+        vertLine: { color: "rgba(125,183,255,0.28)", labelBackgroundColor: "#1d4ed8" },
+        horzLine: { color: "rgba(125,183,255,0.2)", labelBackgroundColor: "#1d4ed8" },
+      },
+      width: chartContainerRef.current.clientWidth,
+      height: chartContainerRef.current.clientHeight,
+      handleScroll: false,
+      handleScale: false,
+    })
+    chartRef.current = chart
+
+    seriesData.forEach((seriesItem, index) => {
+      const series = chart.addSeries(LineSeries, {
+        color: seriesItem.color,
+        lineWidth: index === 0 ? 3 : 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: true,
+        crosshairMarkerRadius: 4,
+        crosshairMarkerBorderColor: "#111820",
+        crosshairMarkerBackgroundColor: seriesItem.color,
+        priceFormat: { type: "custom", formatter: (v: number) => `${Math.round(v)}%` },
+      })
+      series.setData(seriesItem.data.map((pt) => ({ time: pt.time as any, value: pt.value })))
+    })
+    chart.timeScale().fitContent()
+
+    const handleResize = () => {
+      if (chartContainerRef.current) chart.applyOptions({ width: chartContainerRef.current.clientWidth, height: chartContainerRef.current.clientHeight })
+    }
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(handleResize) : null
+    if (resizeObserver && chartContainerRef.current) resizeObserver.observe(chartContainerRef.current)
+    requestAnimationFrame(handleResize)
+    window.addEventListener("resize", handleResize)
+    return () => { resizeObserver?.disconnect(); window.removeEventListener("resize", handleResize); try { chart.remove() } catch {} }
+  }, [seriesData, loading])
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
-      <HemloIndexChart 
-        data={chartData} 
-        idxColor="#3b82f6" 
-        bg="rgba(0,0,0,0)" 
-        showGrid={true}
-      />
-      {loading && !historyData && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", color: "#8a94a6", fontSize: 14 }}>
-          Loading real data...
+      <div ref={chartContainerRef} style={{ width: "100%", height: "100%", overflow: "hidden" }} />
+      {loading && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#8a94a6", fontSize: 13 }}>Loading chart...</div>
+      )}
+      {!loading && seriesData.length === 0 && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#6f7c8a", fontSize: 13, fontWeight: 700 }}>
+          No live price history yet
         </div>
       )}
     </div>
@@ -261,6 +388,7 @@ export default function HomePage() {
   // Data hooks
   const staples = useSection("/api/hemlo-staples")
   const trending = useSection("/api/daily-trending")
+  const newPoly = useSection("/api/polymarket-browse?category=new&limit=6")
   const { topics: newsTopics, loading: newsLoading } = useTrendingTopics()
   const [selectedSide, setSelectedSide] = useState<string | null>(null)
 
@@ -272,23 +400,42 @@ export default function HomePage() {
   const [topPolyMarkets, setTopPolyMarkets] = useState<TrendingTopic[]>([])
   const [loadingSims, setLoadingSims] = useState(true)
   const [polyCat, setPolyCat] = useState("trending")
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener("resize", checkMobile)
+    return () => window.removeEventListener("resize", checkMobile)
+  }, [])
 
   useEffect(() => {
     setLoadingSims(true)
-    fetch(`/api/polymarket-browse?category=${polyCat}&limit=10`)
+    fetch(`/api/polymarket-browse?category=${polyCat}&limit=12`)
       .then(r => r.json())
       .then(d => {
-        // Map Polymarket specific fields to the TrendingTopic format the UI expects
         const mapped = (d.markets || []).map((m: any) => ({
           ...m,
-          topic: m.question || m.title,
+          topic: m.question || m.title || "",
           category: m.category || "Polymarket",
           polymarketOdds: m.outcomes?.[0]?.prob?.toString() || "50",
-          outcomes: m.outcomes,
-          icon: m.image || m.icon,
-          moneyAtStake: m.volume,
-          marketType: "categorical", // Forces the UI to use the outcomes array
+          // outcomes & marketType come directly from the API — no override
+          icon: m.image || m.icon || "",
+          moneyAtStake: m.volume || "",
         }))
+        console.log(`[PolymarketPage] Fetched ${d.markets?.length} raw, mapped to ${mapped.length}`)
+        if (mapped.length === 0) {
+          mapped.push({
+            id: "fallback-market",
+            topic: "Market data temporarily unavailable",
+            category: "Error",
+            polymarketOdds: "50",
+            outcomes: [{ label: "Retrying...", prob: 50 }, { label: "Please wait", prob: 50 }],
+            marketType: "binary",
+            icon: "/polymarket.webp",
+            volume: "$0",
+          })
+        }
         setTopPolyMarkets(mapped)
         setLoadingSims(false)
       })
@@ -340,62 +487,79 @@ export default function HomePage() {
     <div style={{ background: "var(--bg-primary)", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
       {/* ── POLYMARKET BRANDING HEADER ── */}
-      <div style={{ padding: "20px 32px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 20, background: "#0c0f16" }}>
+      <div style={{ padding: "14px 32px 12px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 18, background: "#0c0f16" }}>
          {/* Top Row: Logo, Search, Auth */}
-         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 200 }}>
-               <img src="/polymarket.webp" alt="Polymarket" style={{ width: 26, height: 26 }} />
-               <span style={{ fontSize: 18, fontWeight: 800, color: "#ffffff" }}>Polymarket</span>
+         <div style={{ display: "grid", gridTemplateColumns: "1fr minmax(320px, 620px) 1fr", alignItems: "center", columnGap: 18 }}>
+            <div className="hide-mobile" style={{ minWidth: 0, overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12, minWidth: 0 }}>
+                 <img src="/polymarket.webp" alt="Polymarket" style={{ width: 28, height: 28, flexShrink: 0 }} />
+                 <span style={{ fontSize: 20, fontWeight: 800, color: "#ffffff", letterSpacing: "-0.5px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Polymarket</span>
+              </div>
             </div>
 
-            <div className="hide-mobile" style={{ display: "flex", alignItems: "center", gap: 24, minWidth: 200, justifyContent: "flex-end" }}>
-               <button onClick={() => setHowItWorksOpen(true)} style={{ background: "none", border: "none", fontSize: 13, color: "#3b82f6", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
+            {/* Search Bar - Desktop Only */}
+            <div className="hide-mobile" style={{ width: "100%", position: "relative" }}>
+                <Search size={16} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#8a94a6" }} />
+                <input 
+                  type="text" 
+                  placeholder="Search markets..." 
+                  style={{ width: "100%", background: "#1a1e26", border: "1px solid #2d333d", borderRadius: 10, padding: "10px 16px 10px 42px", color: "white", fontSize: 14, outline: "none", transition: "border-color 0.2s" }}
+                  onFocus={e => e.currentTarget.style.borderColor = "#3b82f6"}
+                  onBlur={e => e.currentTarget.style.borderColor = "#2d333d"}
+                />
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 20 }}>
+               <button onClick={() => setHowItWorksOpen(true)} className="hide-mobile" style={{ background: "none", border: "none", fontSize: 13, color: "#3b82f6", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
                  <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#3b82f6", color: "#0c0f16", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>i</div>
                  How it works
                </button>
-               {!user && (
+               {!user ? (
                  <button onClick={doGoogleSignIn} style={{ padding: "8px 24px", borderRadius: 8, background: "#3b82f6", color: "white", border: "none", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Log In</button>
+               ) : (
+                 <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#1a1e26", border: "1px solid #2d333d" }} />
                )}
             </div>
          </div>
-         {/* Categories */}
-         <div className="hide-mobile" style={{ display: "flex", gap: 28, overflowX: "auto", scrollbarWidth: "none", alignItems: "center" }}>
-            <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+         {/* Categories - Now visible on mobile too */}
+         <div style={{ display: "flex", gap: 24, overflowX: "auto", scrollbarWidth: "none", alignItems: "center", paddingTop: 6, paddingBottom: 4 }}>
+            <button onClick={() => setPolyCat("trending")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: polyCat === "trending" ? "#ffffff" : "#8a94a6", fontWeight: 800, fontSize: 14 }}>
               <TrendingUp size={16} /> Trending
-            </span>
+            </button>
             {["Breaking", "New", "Politics", "Sports", "Crypto", "Esports", "Iran", "Finance", "Geopolitics", "Tech", "Culture", "Economy", "Weather"].map(c => (
-              <button key={c} onClick={() => setPolyCat(c.toLowerCase())} style={{ background: "none", border: "none", padding: 0, color: polyCat === c.toLowerCase() ? "#ffffff" : "#8a94a6", fontWeight: polyCat === c.toLowerCase() ? 700 : 500, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", transition: "color 0.2s" }}>
+              <button key={c} onClick={() => setPolyCat(c.toLowerCase())} style={{ background: "none", border: "none", padding: 0, color: polyCat === c.toLowerCase() ? "#ffffff" : "#8a94a6", fontWeight: polyCat === c.toLowerCase() ? 700 : 500, fontSize: 14, cursor: "pointer", whiteSpace: "nowrap", transition: "color 0.2s" }}>
                 {c}
               </button>
             ))}
          </div>
       </div>
 
-      {/* ── BODY: 75/25 split ── */}
+      {/* ── BODY: Carousel + Sidebar ── */}
       <div 
         id="main-chart-area" 
         className="home-hero-layout" 
         style={{ 
-          display: "grid", 
-          gridTemplateColumns: "1fr 340px", 
-          height: "calc(100vh - 47px)", 
-          minHeight: 500, 
+          display: "flex", 
+          justifyContent: "center",
+          height: "calc(100vh - 120px)",
+          minHeight: 600,
           background: "#000000", 
-          overflow: "hidden" 
+          overflow: "hidden",
+          padding: "0 40px"
         }}
       >
-        {/* ── LEFT: Featured Carousel (75%) ── */}
-        <div style={{ 
-          display: "flex", 
-          flexDirection: "column", 
-          borderRight: "1px solid var(--border)", 
-          padding: "clamp(16px, 4vw, 32px) clamp(16px, 5vw, 40px)",
-          flex: 1, 
-          minWidth: 0, 
-          position: "relative",
-          alignItems: "center", 
-          justifyContent: "center" 
-        }}>
+        <div style={{ display: "flex", width: "100%", maxWidth: 1700, height: "100%", alignItems: "center", gap: 30 }}>
+          {/* ── LEFT: Featured Carousel ── */}
+          <div style={{ 
+            display: "flex", 
+            flexDirection: "column", 
+            flex: 1, 
+            minWidth: 0, 
+            position: "relative",
+            alignItems: "center", 
+            justifyContent: "center",
+            overflow: "hidden",
+          }}>
           
           {/* Navigation Arrow */}
           <button 
@@ -428,14 +592,14 @@ export default function HomePage() {
                 transition={{ duration: 0.3 }}
                 style={{
                   width: "100%",
-                  maxWidth: 1000,
-                  background: "#11141b",
-                  border: "1px solid #1f2330",
-                  borderRadius: 16,
+                  maxWidth: 1240,
+                  background: "#13191f",
+                  border: "1px solid #25303a",
+                  borderRadius: 22,
                   display: "flex",
                   flexDirection: "column",
                   overflow: "hidden",
-                  boxShadow: "0 12px 40px rgba(0,0,0,0.5)",
+                  boxShadow: "0 18px 60px rgba(0,0,0,0.45)",
                   position: "relative",
                   color: "#ffffff",
                 }}
@@ -446,73 +610,115 @@ export default function HomePage() {
                   if (!t) return null;
                   
                   const isCat = t.marketType === "categorical";
-                  const outcomes = isCat ? (t.outcomes || []) : [{ label: "Yes", prob: parseInt(t.polymarketOdds || "50") }, { label: "No", prob: 100 - parseInt(t.polymarketOdds || "50") }];
-                  
-                  const o1 = outcomes[0] || { label: "UP", prob: 50 };
-                  const o2 = outcomes[1] || { label: "DOWN", prob: 50 };
-                  const o1Mult = (100 / Math.max(1, o1.prob)).toFixed(1);
-                  const o2Mult = (100 / Math.max(1, o2.prob)).toFixed(2);
+                  const outcomes: {label:string;prob:number}[] = isCat
+                    ? (t.outcomes || []).slice(0, 4)
+                    : [
+                        { label: "Yes", prob: parseInt(t.polymarketOdds || "50") },
+                        { label: "No",  prob: 100 - parseInt(t.polymarketOdds || "50") },
+                      ];
+
+                  const topOutcome = outcomes[0] || { label: "Yes", prob: 50 };
+                  const chartColors = ["#7db7ff", "#2d9cff", "#facc15", "#fb8c23"];
 
                   return (
-                    <div className="home-carousel-card" style={{ display: "flex", flex: 1, minHeight: 460 }}>
+                    <div className="home-carousel-card" style={{ display: "grid", gridTemplateColumns: "minmax(340px, 35%) minmax(0, 1fr)", width: "100%", height: 444, minHeight: 430 }}>
                       
                       {/* ── LEFT SIDE: Info, Buttons, Comments ── */}
-                      <div className="home-carousel-left" style={{ flex: "0 0 40%", padding: "24px 32px", display: "flex", flexDirection: "column", borderRight: "1px solid #1f2330" }}>
+                      <div className="home-carousel-left" style={{ padding: "22px 24px 16px", display: "flex", flexDirection: "column", minWidth: 0 }}>
                         
                         {/* Header: Logo + Title */}
-                        <div style={{ display: "flex", gap: 16, marginBottom: 24 }}>
-                          <div style={{ width: 48, height: 48, borderRadius: 12, overflow: "hidden", background: "#1f2330", flexShrink: 0 }}>
+                        <div style={{ display: "flex", gap: 15, alignItems: "flex-start", marginBottom: 15 }}>
+                          <div style={{ width: 58, height: 58, borderRadius: 14, overflow: "hidden", background: "#202a33", flexShrink: 0 }}>
                             <img src={t.icon || t.image || "/polymarket.webp"} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           </div>
-                          <div>
-                            <div style={{ fontSize: 22, fontWeight: 800, color: "#ffffff", lineHeight: 1.2, marginBottom: 4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                              {t.topic}
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: "#768493", lineHeight: 1.2, marginBottom: 6 }}>
+                              {t.category || "Polymarket"} <span style={{ color: "#55616d" }}>-</span> {polyCat.charAt(0).toUpperCase() + polyCat.slice(1)}
                             </div>
-                            <div style={{ fontSize: 13, color: "#8a94a6", fontWeight: 500 }}>
-                              {t.endDate ? `Ends ${new Date(t.endDate).toLocaleDateString()}` : "Active Market"}
+                            <div style={{ fontSize: 25, fontWeight: 900, color: "#f6f8fb", lineHeight: 1.08, letterSpacing: 0, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                              {t.topic}
                             </div>
                           </div>
                         </div>
                         
-                        {/* Big Buttons */}
-                        <div style={{ display: "flex", gap: 12, marginBottom: 32 }}>
-                          <button style={{ flex: 1, padding: "16px", borderRadius: 12, background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", color: "#f59e0b", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", justifyContent: "center", gap: 8 }}>
-                            {o1.label.toUpperCase()} <span style={{ opacity: 0.8 }}>{o1Mult}x</span>
-                          </button>
-                          <button style={{ flex: 1, padding: "16px", borderRadius: 12, background: "#1f2330", border: "1px solid #2d3748", color: "#8a94a6", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", justifyContent: "center", gap: 8 }}>
-                            {o2.label.toUpperCase()} <span style={{ opacity: 0.8 }}>{o2Mult}x</span>
-                          </button>
+                        {/* Outcome Buttons — binary=2 cols, categorical=grid */}
+                        <div style={{ display: "flex", flexDirection: "column", marginTop: 2 }}>
+                          {outcomes.slice(0, 4).map((o, oi) => (
+                            <div key={oi} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, padding: "9px 0", borderBottom: oi < Math.min(outcomes.length, 4) - 1 ? "1px solid rgba(255,255,255,0.035)" : "none" }}>
+                              <span style={{ color: "#d8dde3", fontSize: 17, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {o.label}
+                              </span>
+                              <span style={{ color: "#e8edf2", fontSize: 23, fontWeight: 900, letterSpacing: 0, flexShrink: 0 }}>
+                                {Math.round(o.prob)}%
+                              </span>
+                            </div>
+                          ))}
                         </div>
                         
-                        {/* Simulate Button instead of Comments */}
-                        <div style={{ display: "flex", flexDirection: "column", flex: 1, justifyContent: "center" }}>
-                          <Link href={`/simulate/mirofish?scenario=${encodeURIComponent(t.topic)}&domain=polymarket`} style={{ textDecoration: "none" }}>
-                            <div style={{ padding: "18px 24px", borderRadius: 12, background: "#ffffff", color: "#000000", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", justifyContent: "center", alignItems: "center", gap: 12, boxShadow: "0 8px 24px rgba(255,255,255,0.15)", transition: "transform 0.2s" }}>
+                        <div style={{ marginTop: 18, display: "flex", flexDirection: "column", flex: 1, justifyContent: "center" }}>
+                          <Link href={buildMirofishHref(t, "polymarket")} style={{ textDecoration: "none" }}>
+                            <motion.div
+                              whileHover={{ y: -1, boxShadow: "0 10px 28px rgba(255,255,255,0.18)" }}
+                              whileTap={{ scale: 0.98 }}
+                              style={{
+                                padding: "16px 22px",
+                                borderRadius: 12,
+                                background: "#ffffff",
+                                color: "#000000",
+                                fontSize: 16,
+                                fontWeight: 900,
+                                cursor: "pointer",
+                                display: "flex",
+                                justifyContent: "center",
+                                alignItems: "center",
+                                gap: 12,
+                                boxShadow: "0 8px 24px rgba(255,255,255,0.13)",
+                                transition: "box-shadow 0.2s, transform 0.2s",
+                              }}
+                            >
                               <img src="/hemlo-icon.svg" alt="Hemlo" style={{ width: 26, height: 26, objectFit: "contain" }} />
                               Simulate This Market
-                            </div>
+                            </motion.div>
                           </Link>
                         </div>
 
                         {/* Footer / Vol */}
-                        <div style={{ marginTop: 24, fontSize: 13, color: "#3b82f6", fontWeight: 700 }}>
+                        <div style={{ marginTop: "auto", paddingTop: 8, fontSize: 14, color: "#50677f", fontWeight: 900 }}>
                           {t.moneyAtStake ? `${t.moneyAtStake} Vol` : "Trending"}
                         </div>
                       </div>
                       
                       {/* ── RIGHT SIDE: Chart & Stats ── */}
-                      <div className="home-carousel-right" style={{ flex: 1, display: "flex", flexDirection: "column", padding: "24px 32px", position: "relative" }}>
+                      <div className="home-carousel-right" style={{ display: "flex", flexDirection: "column", width: "100%", alignSelf: "stretch", boxSizing: "border-box", background: "transparent", padding: "22px 24px 16px 28px", borderLeft: "1px solid #25303a", position: "relative", minWidth: 0, overflow: "hidden" }}>
+                        <div style={{ position: "absolute", top: 23, right: 26, display: "flex", alignItems: "center", gap: 17, color: "#dce3ea", zIndex: 4 }}>
+                          <Link href={buildMirofishHref(t, "polymarket")} style={{ color: "inherit", lineHeight: 0 }} title="Run MiroFish simulation">
+                            <Link2 size={19} strokeWidth={2.2} />
+                          </Link>
+                          <Bookmark size={20} strokeWidth={2.2} />
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: 16, minHeight: 30, marginBottom: 10, paddingRight: 86 }}>
+                          <span style={{ color: "#f3f6f9", fontSize: 22, fontWeight: 900, letterSpacing: 0 }}>{Math.round(topOutcome.prob)}%</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", minWidth: 0 }}>
+                            {outcomes.slice(0, 4).map((o, oi) => (
+                              <span key={o.label} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#7d8996", fontSize: 13, fontWeight: 800, whiteSpace: "nowrap" }}>
+                                <span style={{ width: 8, height: 8, borderRadius: "50%", background: chartColors[oi % chartColors.length], display: "inline-block" }} />
+                                {o.label} {Math.round(o.prob)}%
+                              </span>
+                            ))}
+                          </div>
+                        </div>
                         
                         {/* Top Stats Row */}
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 40 }}>
+                        <div style={{ display: "none", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 40 }}>
                           <div style={{ display: "flex", gap: 40 }}>
                             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                               <span style={{ fontSize: 12, color: "#8a94a6", fontWeight: 600 }}>Volume</span>
                               <span style={{ fontSize: 24, fontWeight: 800, color: "#94a3b8" }}>{t.moneyAtStake || "$0"}</span>
                             </div>
                             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                              <span style={{ fontSize: 12, color: "#f59e0b", fontWeight: 600 }}>Current Odds ▲</span>
-                              <span style={{ fontSize: 24, fontWeight: 800, color: "#f59e0b" }}>{o1.prob}%</span>
+                              <span style={{ fontSize: 12, color: "#f59e0b", fontWeight: 600 }}>Top Outcome ▲</span>
+                              <span style={{ fontSize: 24, fontWeight: 800, color: "#f59e0b" }}>{topOutcome.prob}%</span>
                             </div>
                           </div>
                           
@@ -525,16 +731,24 @@ export default function HomePage() {
                         </div>
 
                         {/* Main Chart Area */}
-                        <div style={{ flex: 1, position: "relative", width: "100%", opacity: 1 }}>
+                        <div style={{ flex: 1, position: "relative", width: "100%", minWidth: 0, minHeight: 250, opacity: 1, overflow: "hidden" }}>
                            <RealPolymarketChart t={t} isActive={true} />
                            {/* Fake Target Line */}
-                           <div style={{ position: "absolute", top: "50%", left: 0, right: 0, borderTop: "1px dashed #334155", zIndex: 0, pointerEvents: "none" }}>
+                           <div style={{ display: "none", position: "absolute", top: "50%", left: 0, right: 0, borderTop: "1px dashed #334155", zIndex: 0, pointerEvents: "none" }}>
                               <div style={{ position: "absolute", right: -10, top: -12, background: "#475569", padding: "4px 12px", borderRadius: 12, fontSize: 11, fontWeight: 700, color: "#f8fafc" }}>Target</div>
                            </div>
                         </div>
 
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, color: "#566b80", fontSize: 14, fontWeight: 800, padding: "6px 0 0" }}>
+                          <span>{t.endDate ? `Ends ${new Date(t.endDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}` : "Active market"}</span>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                            <img src="/polymarket.webp" alt="" style={{ width: 20, height: 20, objectFit: "contain", opacity: 0.75 }} />
+                            Polymarket
+                          </span>
+                        </div>
+
                         {/* Pagination Dots at very bottom */}
-                        <div style={{ position: "absolute", bottom: 24, right: 32, display: "flex", gap: 8 }}>
+                        <div style={{ position: "absolute", bottom: 24, right: 32, display: "none", gap: 8 }}>
                            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                             {displayed.map((_, i) => (
                               <div key={i} onClick={() => setChartTab(i as any)} style={{ width: 6, height: 6, borderRadius: "50%", background: i === activeIdx ? "#ffffff" : "#475569", cursor: "pointer" }} />
@@ -554,47 +768,7 @@ export default function HomePage() {
           </AnimatePresence>
         </div>
 
-        {/* ── RIGHT: Trending/Breaking Panel (25%) ── */}
-        <div className="hide-mobile" style={{ display: "flex", flexDirection: "column", overflow: "hidden", background: "#050505" }}>
-          <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>Breaking news &gt;</div>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto", borderBottom: "1px solid var(--border)" }}>
-          {newsTopics.filter(t => t.urgency === "breaking" || t.urgency === "hot").slice(0, 6).map((t, i) => (
-              <div key={i} style={{ padding: "12px 20px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8, color: t.urgency === "breaking" ? "#ef4444" : "var(--accent)", flexShrink: 0 }}>
-                    {t.urgency}
-                  </span>
-                  <span style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>{t.category}</span>
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                  {t.topic}
-                </div>
-              </div>
-            ))}
-          </div>
-          
-          <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>Hot topics &gt;</div>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            {trending.data.slice(0, 5).map((t, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", borderBottom: "1px solid var(--border)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", width: 14 }}>{i + 1}</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>{t.topic}</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>{t.moneyAtStake ? t.moneyAtStake + " Vol" : "Trending"}</span>
-                  <Flame size={12} color="#ef4444" />
-                </div>
-              </div>
-            ))}
-            <div style={{ padding: "16px", textAlign: "center" }}>
-               <Link href="/hot" style={{ color: "var(--text-primary)", fontSize: 12, fontWeight: 700, textDecoration: "none", padding: "8px 24px", borderRadius: 20, border: "1px solid var(--border)" }}>Explore all</Link>
-            </div>
-          </div>
+          <HotSimulationsRail />
         </div>
       </div>
 

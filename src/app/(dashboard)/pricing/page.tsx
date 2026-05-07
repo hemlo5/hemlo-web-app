@@ -1,192 +1,110 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { motion, AnimatePresence } from "framer-motion"
-import { Check, Lock, ArrowRight, ShieldCheck, ArrowUpRight, LogOut, Crown, User as UserIcon } from "lucide-react"
-import Link from "next/link"
+import { useState, useEffect } from "react"
+import { motion } from "framer-motion"
+import { Lock, ArrowRight, ShieldCheck, ArrowUpRight, Crown } from "lucide-react"
 import { createClient } from "@/utils/supabase/client"
 import { useRouter } from "next/navigation"
+import type { User } from "@supabase/supabase-js"
+type PlanId = "free" | "starter" | "pro" | "founder"
 
-// ── Inline Hemlo Header matching landing page aesthetic ──────────────────────
-function PricingHeader({ user, tier, onSignOut }: { user: any; tier: string; onSignOut: () => void }) {
-  const [dropdownOpen, setDropdownOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handle = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false)
-      }
-    }
-    document.addEventListener("mousedown", handle)
-    return () => document.removeEventListener("mousedown", handle)
-  }, [])
-
-  const initial = (user?.user_metadata?.full_name || user?.email || "U").charAt(0).toUpperCase()
-  const displayName = user?.user_metadata?.full_name || user?.email?.split("@")[0] || "User"
-  const avatarUrl = user?.user_metadata?.avatar_url
-
-  const tierLabel: Record<string, string> = {
-    normal: "Free", free: "Free", premium: "Pro", pro: "Pro", founder: "Founder",
-  }
-
-  return (
-    <header style={{
-      position: "fixed", top: 0, left: 0, right: 0, zIndex: 50,
-      background: "rgba(0,0,0,0.7)", backdropFilter: "blur(16px)",
-      borderBottom: "1px solid rgba(255,255,255,0.08)",
-    }}>
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 24px", height: 64, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-
-        {/* Logo */}
-        <Link href="/polymarket" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 8,
-            background: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 14, fontWeight: 900, color: "#000", letterSpacing: "-1px" }}>H</span>
-          </div>
-          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, fontWeight: 700, color: "#fff", letterSpacing: "-0.5px" }}>hemlo</span>
-        </Link>
-
-        {/* Nav center */}
-        <nav style={{ display: "flex", gap: 4 }}>
-          {[{ label: "Home", href: "/polymarket" }, { label: "Pricing", href: "/pricing" }, { label: "Dashboard", href: "/simulate/mirofish" }].map(item => (
-            <Link key={item.href} href={item.href} style={{
-              padding: "6px 16px", borderRadius: 999, fontSize: 13, fontWeight: 500,
-              color: item.href === "/pricing" ? "#000" : "rgba(255,255,255,0.6)",
-              background: item.href === "/pricing" ? "#fff" : "transparent",
-              textDecoration: "none", transition: "all 0.2s",
-            }}>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-
-        {/* Right side */}
-        <div ref={dropdownRef} style={{ position: "relative" }}>
-          <button
-            onClick={() => setDropdownOpen(v => !v)}
-            style={{ display: "flex", alignItems: "center", gap: 10, background: "transparent", border: "none", cursor: "pointer", padding: "4px 4px 4px 12px", borderRadius: 999 }}
-          >
-            {user && (
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", lineHeight: 1.2 }}>{displayName}</div>
-                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: 1.5 }}>{tierLabel[tier] ?? "Free"}</div>
-              </div>
-            )}
-            <div style={{
-              width: 36, height: 36, borderRadius: "50%", border: "1px solid rgba(255,255,255,0.2)",
-              background: "rgba(255,255,255,0.05)", overflow: "hidden",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              {user && avatarUrl
-                ? <img src={avatarUrl} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                : <span style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{user ? initial : "?"}</span>
-              }
-            </div>
-          </button>
-
-          <AnimatePresence>
-            {dropdownOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                transition={{ duration: 0.15 }}
-                style={{
-                  position: "absolute", right: 0, top: "calc(100% + 8px)",
-                  width: 240, background: "#0a0a0a", border: "1px solid rgba(255,255,255,0.1)",
-                  borderRadius: 16, overflow: "hidden", padding: 8, boxShadow: "0 20px 60px rgba(0,0,0,0.8)",
-                }}
-              >
-                {user ? (
-                  <>
-                    <div style={{ padding: "12px 12px 8px", borderBottom: "1px solid rgba(255,255,255,0.06)", marginBottom: 8 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", marginBottom: 2 }}>{displayName}</div>
-                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{user.email}</div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 10, margin: "0 0 8px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <Crown size={14} color="#f59e0b" />
-                        <span style={{ fontSize: 13, color: "#fff" }}>Current Plan</span>
-                      </div>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.7)", textTransform: "uppercase", letterSpacing: 1 }}>{tierLabel[tier] ?? "Free"}</span>
-                    </div>
-                    <Link href="/profile" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, color: "rgba(255,255,255,0.6)", fontSize: 13, textDecoration: "none" }} onMouseOver={e => e.currentTarget.style.background = "rgba(255,255,255,0.05)"} onMouseOut={e => e.currentTarget.style.background = "transparent"}>
-                      <UserIcon size={14} /> Account Settings
-                    </Link>
-                    <button onClick={onSignOut} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, color: "rgba(239,68,68,0.8)", fontSize: 13, background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }} onMouseOver={e => e.currentTarget.style.background = "rgba(239,68,68,0.08)"} onMouseOut={e => e.currentTarget.style.background = "transparent"}>
-                      <LogOut size={14} /> Sign Out
-                    </button>
-                  </>
-                ) : (
-                  <Link href="/sign-in" style={{ display: "block", padding: "12px", textAlign: "center", color: "#fff", fontWeight: 600, fontSize: 13, textDecoration: "none" }}>
-                    Sign In →
-                  </Link>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-    </header>
-  )
+type Plan = {
+  id: PlanId
+  tag: string
+  name: string
+  price: string
+  period: string
+  description: string
+  cta: string
+  disabled: boolean
+  highlight: boolean
+  isOneTime: boolean
+  features: string[]
+  locked: string[]
+  href?: string
 }
 
-// ── Main Pricing Page ─────────────────────────────────────────────────────────
+type ProfileBilling = {
+  tier?: string | null
+  has_starter_pack?: boolean | null
+}
+
+type CheckoutResponse = {
+  checkoutUrl?: string
+  error?: string
+}
+
+const CHECKOUT_PLANS = ["starter", "pro", "founder"] as const
+const PLAN_LABELS: Record<string, string> = {
+  normal: "Free",
+  free: "Free",
+  premium: "Pro",
+  pro: "Pro",
+  founder: "Founder",
+}
+
+function isCheckoutPlan(value: string | null): value is (typeof CHECKOUT_PLANS)[number] {
+  return !!value && CHECKOUT_PLANS.includes(value as (typeof CHECKOUT_PLANS)[number])
+}
+
 export default function PricingPage() {
-  const [user, setUser] = useState<any>(null)
-  const [tier, setTier] = useState<string>("normal")
-  const [hasStarterPack, setHasStarterPack] = useState<boolean>(false)
-  const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [tier, setTier] = useState("normal")
+  const [hasStarterPack, setHasStarterPack] = useState(false)
+  const [loadingPlan, setLoadingPlan] = useState<PlanId | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }: any) => {
-      if (user) {
-        setUser(user)
-        supabase
-          .from("profiles")
-          .select("tier, has_starter_pack")
-          .eq("id", user.id)
-          .single()
-          .then(({ data }: any) => {
-            if (data?.tier) setTier(data.tier)
-            if (data?.has_starter_pack) setHasStarterPack(true)
+    let cancelled = false
 
-            const params = new URLSearchParams(window.location.search)
-            const autoCheckout = params.get("checkout")
-            if (autoCheckout && ["starter", "pro", "founder"].includes(autoCheckout)) {
-              const userTier = data?.tier || "normal"
-              const owns =
-                (autoCheckout === "pro" && (userTier === "pro" || userTier === "premium")) ||
-                (autoCheckout === "founder" && userTier === "founder") ||
-                (autoCheckout === "starter" && data?.has_starter_pack)
-              if (!owns) {
-                fetch("/api/checkout", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ user_id: user.id, email: user.email, plan: autoCheckout }),
-                })
-                  .then(r => r.json())
-                  .then(d => { if (d.checkoutUrl) window.location.href = d.checkoutUrl })
-                  .catch(() => {})
-              }
-            }
+    async function loadBillingState() {
+      const { data: authData } = await supabase.auth.getUser()
+      const currentUser = authData.user
+      if (!currentUser || cancelled) return
+
+      setUser(currentUser)
+
+      const { data } = await supabase
+        .from("profiles")
+        .select("tier, has_starter_pack")
+        .eq("id", currentUser.id)
+        .single()
+
+      if (cancelled) return
+
+      const profile = data as ProfileBilling | null
+      if (profile?.tier) setTier(profile.tier)
+      if (profile?.has_starter_pack) setHasStarterPack(true)
+
+      const params = new URLSearchParams(window.location.search)
+      const autoCheckout = params.get("checkout")
+      if (isCheckoutPlan(autoCheckout)) {
+        const userTier = profile?.tier || "normal"
+        const owns =
+          (autoCheckout === "pro" && (userTier === "pro" || userTier === "premium")) ||
+          (autoCheckout === "founder" && userTier === "founder") ||
+          (autoCheckout === "starter" && profile?.has_starter_pack)
+        if (!owns) {
+          fetch("/api/checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: currentUser.id, email: currentUser.email, plan: autoCheckout }),
           })
+            .then(r => r.json() as Promise<CheckoutResponse>)
+            .then(d => { if (d.checkoutUrl) window.location.href = d.checkoutUrl })
+            .catch(() => {})
+        }
       }
-    })
-  }, [])
+    }
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
-    setTier("normal")
-  }
+    loadBillingState()
+    return () => {
+      cancelled = true
+    }
+  }, [supabase])
 
-  const handleCheckout = async (plan: any) => {
+  const handleCheckout = async (plan: Plan) => {
     if (plan.id === "free") { router.push("/sign-up"); return }
     if (plan.disabled) return
     setLoadingPlan(plan.id)
@@ -196,17 +114,17 @@ export default function PricingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: user?.id, email: user?.email, plan: plan.id }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      window.location.href = data.checkoutUrl
-    } catch (err: any) {
-      alert("Checkout failed: " + err.message)
+      const data = await res.json() as CheckoutResponse
+      if (!res.ok) throw new Error(data.error ?? "Unknown checkout error")
+      if (data.checkoutUrl) window.location.href = data.checkoutUrl
+    } catch (err: unknown) {
+      alert("Checkout failed: " + (err instanceof Error ? err.message : "Unknown error"))
     } finally {
       setLoadingPlan(null)
     }
   }
 
-  const isCurrent = (planId: string) => {
+  const isCurrent = (planId: PlanId) => {
     if (planId === "free" && (tier === "normal" || tier === "free")) return true
     if (planId === "starter" && hasStarterPack) return false // one-time, no "current"
     if (planId === "pro" && (tier === "pro" || tier === "premium")) return true
@@ -214,7 +132,7 @@ export default function PricingPage() {
     return false
   }
 
-  const PLANS = [
+  const PLANS: Plan[] = [
     {
       id: "free",
       tag: "STARTER",
@@ -275,19 +193,17 @@ export default function PricingPage() {
   ]
 
   const STATS = [
-    { value: "4–7", label: "Agent debate rounds per sim" },
+    { value: "4-7", label: "Agent debate rounds per sim" },
     { value: "< 2s", label: "News ingestion latency" },
     { value: "8,000+", label: "Sources monitored daily" },
     { value: "100%", label: "Simulation audit trail coverage" },
   ]
 
   return (
-    <main style={{ minHeight: "100vh", background: "#000000", fontFamily: "'Inter', sans-serif", color: "#fff" }}>
-      <PricingHeader user={user} tier={tier} onSignOut={handleSignOut} />
+    <main style={{ height: "100vh", overflowY: "auto", background: "#000000", fontFamily: "'Inter', sans-serif", color: "#fff" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "56px 24px 100px" }}>
 
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "120px 24px 100px" }}>
-
-        {/* Header */}
+        {/* Intro */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
@@ -323,18 +239,18 @@ export default function PricingPage() {
             <Crown size={16} color="#f59e0b" />
             <span style={{ fontSize: 13, color: "rgba(255,255,255,0.6)" }}>
               You are currently on the <strong style={{ color: "#fff" }}>
-                {({ normal: "Free", free: "Free", premium: "Pro", pro: "Pro", founder: "Founder" } as any)[tier] ?? "Free"}
+                {PLAN_LABELS[tier] ?? "Free"}
               </strong> plan.
             </span>
             {tier !== "founder" && (
               <span style={{ marginLeft: "auto", fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
-                Upgrade below ↓
+                Upgrade below
               </span>
             )}
           </motion.div>
         )}
 
-        {/* Plan Grid — alternating black/white like ServicesSection */}
+        {/* Plan grid */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 24 }}>
           {PLANS.map((plan, i) => {
             const isWhite = plan.highlight
@@ -370,7 +286,7 @@ export default function PricingPage() {
                   </span>
                   {current ? (
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: isWhite ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.5)", background: isWhite ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.08)", padding: "4px 10px", borderRadius: 999 }}>
-                      ✓ Active
+                      Active
                     </span>
                   ) : (
                     <div style={{ width: 28, height: 28, borderRadius: "50%", border: `1px solid ${isWhite ? "rgba(0,0,0,0.15)" : "rgba(255,255,255,0.15)"}`, display: "flex", alignItems: "center", justifyContent: "center", color: isWhite ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.4)" }}>
@@ -428,7 +344,7 @@ export default function PricingPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: "auto", paddingTop: 20, borderTop: `1px solid ${isWhite ? "rgba(0,0,0,0.1)" : "rgba(255,255,255,0.08)"}` }}>
                   {plan.features.map(f => (
                     <div key={f} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
-                      <span style={{ color: isWhite ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.3)", fontSize: 9 }}>◆</span>
+                      <span style={{ color: isWhite ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.3)", fontSize: 9 }}>+</span>
                       <span style={{ color: isWhite ? "rgba(0,0,0,0.6)" : "rgba(255,255,255,0.6)" }}>{f}</span>
                     </div>
                   ))}

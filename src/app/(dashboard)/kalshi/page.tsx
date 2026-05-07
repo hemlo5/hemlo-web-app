@@ -11,6 +11,7 @@ import {
 import Link from "next/link"
 import { HemloIndexChart, genIndexData } from "@/components/hemlo-index-chart"
 import { ExploreMarkets } from "@/components/explore-markets"
+import { HotSimulationsRail } from "@/components/hot-simulations-rail"
 import { MarketSideRow, useSection } from "@/components/market-sidebar"
 import { WorldMap } from "@/components/world-map"
 import { useTrendingTopics } from "@/lib/useTrendingTopics"
@@ -36,53 +37,107 @@ function formatEndsIn(endDateStr: string | undefined): string {
   return `${minutes}m`
 }
 
+function buildMirofishHref(t: any, domain = "kalshi") {
+  const yesProb = parseInt(t?.polymarketOdds || "50")
+  const rawOutcomes = Array.isArray(t?.outcomes) && t.outcomes.length > 0
+    ? t.outcomes
+    : [
+        { label: "Yes", prob: yesProb },
+        { label: "No", prob: 100 - yesProb },
+      ]
+  const outcomes = rawOutcomes
+    .filter((o: any) => o?.label)
+    .slice(0, 12)
+    .map((o: any, index: number) => ({
+      label: String(o.label).trim(),
+      prob: Number.isFinite(Number(o.prob)) ? Math.round(Number(o.prob)) : undefined,
+      tokenId: o.tokenId || o.clobTokenId || t?.clobTokenIds?.[index],
+    }))
+
+  const params = new URLSearchParams({
+    scenario: t?.topic || "",
+    domain,
+    marketType: t?.marketType || (outcomes.length > 2 ? "categorical" : "binary"),
+  })
+  if (outcomes.length >= 2) params.set("outcomes", JSON.stringify(outcomes))
+  if (t?.id) params.set("marketId", String(t.id))
+  if (t?.icon || t?.image) params.set("img", String(t.icon || t.image))
+  return `/simulate/mirofish?${params.toString()}`
+}
+
 function RealKalshiChart({ t, isActive }: { t: any; isActive: boolean }) {
-  const [historyData, setHistoryData] = useState<any[] | null>(null)
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [historyData, setHistoryData] = useState<{ time: number; value: number }[] | null>(null)
   const [loading, setLoading] = useState(true)
+  const chartRef = useRef<any>(null)
 
   useEffect(() => {
     if (!isActive) return
     if (historyData) return
-
     const tokenId = `kalshi-${t.id}`
-
     setLoading(true)
     fetch(`/api/polymarket-history?tokenId=${tokenId}&interval=1w`)
       .then(r => r.json())
       .then(d => {
         if (d.history && d.history.length > 0) {
-          const hemloAvg = t.hemloOdds ?? 50
-          const formatted = d.history.map((pt: any, idx: number) => {
-            const ts = new Date(pt.t * 1000)
-            return {
-              i: idx,
-              time: `${ts.getHours().toString().padStart(2, "0")}:${ts.getMinutes().toString().padStart(2, "0")}`,
-              timestamp: pt.t,
-              crowd: pt.p * 100,
-              hemlo: hemloAvg
-            }
-          })
-          setHistoryData(formatted)
+          const pts = d.history.map((pt: any) => ({ time: pt.t, value: Math.round(pt.p * 100) }))
+          setHistoryData(pts)
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [isActive, t, historyData])
 
-  const chartData = historyData || genIndexData(60, t.hemloOdds ?? 50, parseInt(t.polymarketOdds ?? "50"))
+  const baseProb = parseInt(t.polymarketOdds || "50")
+  const fallback = Array.from({ length: 60 }, (_, i) => ({
+    time: Math.floor(Date.now() / 1000) - (60 - i) * 3600,
+    value: Math.max(0, Math.min(100, baseProb + Math.sin(i * 0.4) * 4 + Math.cos(i * 0.7) * 2))
+  }))
+  const pts = historyData || fallback
+
+  useEffect(() => {
+    if (!chartContainerRef.current || pts.length === 0) return
+    if (chartRef.current) { try { chartRef.current.remove() } catch {} }
+    const chart = createChart(chartContainerRef.current, {
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#6b7280", fontFamily: "Inter, sans-serif", fontSize: 11 },
+      grid: { vertLines: { visible: false }, horzLines: { color: "rgba(255,255,255,0.04)" } },
+      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.15, bottom: 0.15 }, minimumWidth: 50 },
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true },
+      crosshair: { vertLine: { labelBackgroundColor: "#22c55e" }, horzLine: { labelBackgroundColor: "#22c55e" } },
+      width: chartContainerRef.current.clientWidth,
+      height: chartContainerRef.current.clientHeight,
+      handleScroll: false,
+      handleScale: false,
+    })
+    chartRef.current = chart
+    const isLow = baseProb < 15
+    const lineColor = isLow ? "#ef4444" : baseProb > 60 ? "#22c55e" : "#22c55e"
+    const topFill = isLow ? "rgba(239,68,68,0.18)" : "rgba(34,197,94,0.18)"
+    const series = chart.addSeries(AreaSeries, {
+      lineColor,
+      topColor: topFill,
+      bottomColor: "rgba(0,0,0,0)",
+      lineWidth: 2,
+      priceFormat: { type: "custom", formatter: (v: number) => `${Math.round(v)}%` },
+    })
+    // Sort by timestamp ascending and remove duplicate timestamps
+    const sortedPts = [...pts]
+      .sort((a, b) => a.time - b.time)
+      .filter((p, i, arr) => i === 0 || p.time !== arr[i - 1].time)
+    series.setData(sortedPts.map(p => ({ time: p.time as any, value: p.value })))
+    chart.timeScale().fitContent()
+    const handleResize = () => {
+      if (chartContainerRef.current) chart.applyOptions({ width: chartContainerRef.current.clientWidth, height: chartContainerRef.current.clientHeight })
+    }
+    window.addEventListener("resize", handleResize)
+    return () => { window.removeEventListener("resize", handleResize); try { chart.remove() } catch {} }
+  }, [pts, baseProb])
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
-      <HemloIndexChart 
-        data={chartData} 
-        idxColor="#22c55e" 
-        bg="rgba(0,0,0,0)" 
-        showGrid={true}
-      />
+      <div ref={chartContainerRef} style={{ width: "100%", height: "100%" }} />
       {loading && !historyData && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", color: "#8a94a6", fontSize: 14 }}>
-          Loading chart data...
-        </div>
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#8a94a6", fontSize: 13 }}>Loading chart...</div>
       )}
     </div>
   )
@@ -257,6 +312,7 @@ export default function HomePage() {
   // Data hooks
   const staples = useSection("/api/hemlo-staples")
   const trending = useSection("/api/daily-trending")
+  const newPoly = useSection("/api/polymarket-browse?category=new&limit=6")
   const { topics: newsTopics, loading: newsLoading } = useTrendingTopics()
   const [selectedSide, setSelectedSide] = useState<string | null>(null)
 
@@ -268,6 +324,14 @@ export default function HomePage() {
   const [topKalshiMarkets, setTopKalshiMarkets] = useState<TrendingTopic[]>([])
   const [loadingSims, setLoadingSims] = useState(true)
   const [kalshiCat, setKalshiCat] = useState("trending")
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener("resize", checkMobile)
+    return () => window.removeEventListener("resize", checkMobile)
+  }, [])
 
   useEffect(() => {
     setLoadingSims(true)
@@ -287,7 +351,16 @@ export default function HomePage() {
           moneyAtStake: m.volume,
           marketType: m.marketType === "categorical" || (m.outcomes && m.outcomes.length > 2) ? "categorical" : "binary",
         }))
-        setTopKalshiMarkets(mapped)
+        setTopKalshiMarkets(mapped.length > 0 ? mapped : [{
+          id: "fallback-kalshi",
+          topic: "Kalshi data temporarily unavailable",
+          category: "Error",
+          polymarketOdds: "50",
+          outcomes: [{ label: "Retrying...", prob: 50 }, { label: "Please wait", prob: 50 }],
+          marketType: "binary",
+          icon: "/kalshi.webp",
+          moneyAtStake: "$0",
+        }])
         setLoadingSims(false)
       })
       .catch(() => { setLoadingSims(false) })
@@ -338,62 +411,79 @@ export default function HomePage() {
     <div style={{ background: "var(--bg-primary)", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
 
       {/* ── KALSHI BRANDING HEADER ── */}
-      <div style={{ padding: "20px 32px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 20, background: "#0c0f16" }}>
+      <div style={{ padding: "14px 32px 12px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 18, background: "#0c0f16" }}>
          {/* Top Row: Logo, Search, Auth */}
-         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 200 }}>
-               <img src="/kalshi.webp" alt="Kalshi" style={{ width: 26, height: 26 }} />
-               <span style={{ fontSize: 18, fontWeight: 800, color: "#ffffff" }}>Kalshi</span>
+         <div style={{ display: "grid", gridTemplateColumns: "1fr minmax(320px, 620px) 1fr", alignItems: "center", columnGap: 18 }}>
+            <div className="hide-mobile" style={{ minWidth: 0, overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12, minWidth: 0 }}>
+                 <img src="/kalshi.webp" alt="Kalshi" style={{ width: 28, height: 28, flexShrink: 0 }} />
+                 <span style={{ fontSize: 20, fontWeight: 800, color: "#ffffff", letterSpacing: "-0.5px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Kalshi</span>
+              </div>
             </div>
 
-            <div className="hide-mobile" style={{ display: "flex", alignItems: "center", gap: 24, minWidth: 200, justifyContent: "flex-end" }}>
-               <button onClick={() => setHowItWorksOpen(true)} style={{ background: "none", border: "none", padding: 0, fontSize: 13, color: "#22c55e", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                 <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#22c55e", color: "#0c0f16", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>i</div>
+            {/* Search Bar - Desktop Only */}
+            <div className="hide-mobile" style={{ width: "100%", position: "relative" }}>
+                <Search size={16} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#8a94a6" }} />
+                <input 
+                  type="text" 
+                  placeholder="Search markets..." 
+                  style={{ width: "100%", background: "#1a1e26", border: "1px solid #2d333d", borderRadius: 10, padding: "10px 16px 10px 42px", color: "white", fontSize: 14, outline: "none", transition: "border-color 0.2s" }}
+                  onFocus={e => e.currentTarget.style.borderColor = "#3b82f6"}
+                  onBlur={e => e.currentTarget.style.borderColor = "#2d333d"}
+                />
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 20 }}>
+               <button onClick={() => setHowItWorksOpen(true)} className="hide-mobile" style={{ background: "none", border: "none", fontSize: 13, color: "#3b82f6", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
+                 <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#3b82f6", color: "#0c0f16", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10 }}>i</div>
                  How it works
                </button>
-               {!user && (
-                 <button onClick={doGoogleSignIn} style={{ padding: "8px 24px", borderRadius: 8, background: "#22c55e", color: "white", border: "none", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Log In</button>
+               {!user ? (
+                 <button onClick={doGoogleSignIn} style={{ padding: "8px 24px", borderRadius: 8, background: "#3b82f6", color: "white", border: "none", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Log In</button>
+               ) : (
+                 <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#1a1e26", border: "1px solid #2d333d" }} />
                )}
             </div>
          </div>
-         {/* Categories */}
-         <div className="hide-mobile" style={{ display: "flex", gap: 28, overflowX: "auto", scrollbarWidth: "none", alignItems: "center" }}>
-            <span style={{ color: "#ffffff", fontWeight: 800, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+         {/* Categories - Now visible on mobile too */}
+         <div style={{ display: "flex", gap: 24, overflowX: "auto", scrollbarWidth: "none", alignItems: "center", paddingTop: 6, paddingBottom: 4 }}>
+            <button onClick={() => setKalshiCat("trending")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: kalshiCat === "trending" ? "#ffffff" : "#8a94a6", fontWeight: 800, fontSize: 14 }}>
               <TrendingUp size={16} /> Trending
-            </span>
-            {["Elections", "Politics", "Economics", "Culture", "Tech", "Science", "Financials", "Companies", "Mentions", "Weather", "Climate"].map(c => (
-              <button key={c} onClick={() => setKalshiCat(c.toLowerCase())} style={{ background: "none", border: "none", padding: 0, color: kalshiCat === c.toLowerCase() ? "#ffffff" : "#8a94a6", fontWeight: kalshiCat === c.toLowerCase() ? 700 : 500, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", transition: "color 0.2s" }}>
+            </button>
+            {["Breaking", "New", "Politics", "Sports", "Crypto", "Esports", "Iran", "Finance", "Geopolitics", "Tech", "Culture", "Economy", "Weather"].map(c => (
+              <button key={c} onClick={() => setKalshiCat(c.toLowerCase())} style={{ background: "none", border: "none", padding: 0, color: kalshiCat === c.toLowerCase() ? "#ffffff" : "#8a94a6", fontWeight: kalshiCat === c.toLowerCase() ? 700 : 500, fontSize: 14, cursor: "pointer", whiteSpace: "nowrap", transition: "color 0.2s" }}>
                 {c}
               </button>
             ))}
          </div>
       </div>
 
-      {/* ── BODY: 75/25 split ── */}
+      {/* ── BODY: Carousel + Sidebar ── */}
       <div 
         id="main-chart-area" 
         className="home-hero-layout" 
         style={{ 
-          display: "grid", 
-          gridTemplateColumns: "1fr 340px", 
-          height: "calc(100vh - 47px)", 
-          minHeight: 500, 
+          display: "flex", 
+          justifyContent: "center",
+          height: "calc(100vh - 120px)",
+          minHeight: 600,
           background: "#000000", 
-          overflow: "hidden" 
+          overflow: "hidden",
+          padding: "0 40px"
         }}
       >
-        {/* ── LEFT: Featured Carousel (75%) ── */}
-        <div style={{ 
-          display: "flex", 
-          flexDirection: "column", 
-          borderRight: "1px solid var(--border)", 
-          padding: "clamp(16px, 4vw, 32px) clamp(16px, 5vw, 40px)",
-          flex: 1, 
-          minWidth: 0, 
-          position: "relative",
-          alignItems: "center", 
-          justifyContent: "center" 
-        }}>
+        <div style={{ display: "flex", width: "100%", maxWidth: 1400, height: "100%", alignItems: "center", gap: 40 }}>
+          {/* ── LEFT: Featured Carousel ── */}
+          <div style={{ 
+            display: "flex", 
+            flexDirection: "column", 
+            flex: 1, 
+            minWidth: 0, 
+            position: "relative",
+            alignItems: "center", 
+            justifyContent: "center",
+            overflow: "hidden",
+          }}>
           
           {/* Navigation Arrow */}
           <button 
@@ -426,7 +516,7 @@ export default function HomePage() {
                 transition={{ duration: 0.3 }}
                 style={{
                   width: "100%",
-                  maxWidth: 1000,
+                  maxWidth: 920,
                   background: "#11141b",
                   border: "1px solid #1f2330",
                   borderRadius: 16,
@@ -471,20 +561,33 @@ export default function HomePage() {
                             </div>
                           </div>
                         </div>
-                        
-                        {/* Big Buttons */}
-                        <div style={{ display: "flex", gap: 12, marginBottom: 32 }}>
-                          <button style={{ flex: 1, padding: "16px", borderRadius: 12, background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)", color: "#22c55e", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", justifyContent: "center", gap: 8 }}>
-                            {o1.label.toUpperCase()} <span style={{ opacity: 0.8 }}>{o1Mult}x</span>
-                          </button>
-                          <button style={{ flex: 1, padding: "16px", borderRadius: 12, background: "#1f2330", border: "1px solid #2d3748", color: "#8a94a6", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", justifyContent: "center", gap: 8 }}>
-                            {o2.label.toUpperCase()} <span style={{ opacity: 0.8 }}>{o2Mult}x</span>
-                          </button>
+                        {/* Outcome Buttons — binary=2 cols, categorical=grid */}
+                        <div style={{ display: "grid", gridTemplateColumns: outcomes.length <= 2 ? "1fr 1fr" : "1fr 1fr", gap: 8, marginBottom: 20 }}>
+                          {(isMobile && outcomes.length > 2 ? outcomes.slice(0, 2) : outcomes).map((o, oi) => {
+                            const colors = [
+                              { bg: "rgba(34,197,94,0.15)",  border: "rgba(34,197,94,0.35)",  text: "#22c55e" },
+                              { bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.28)",  text: "#ef4444" },
+                              { bg: "rgba(59,130,246,0.12)",border: "rgba(59,130,246,0.28)", text: "#3b82f6" },
+                              { bg: "rgba(245,158,11,0.12)",border: "rgba(245,158,11,0.28)", text: "#f59e0b" },
+                            ]
+                            const c = colors[oi % colors.length]
+                            return (
+                              <button key={oi} style={{ padding: "12px 8px", borderRadius: 10, background: c.bg, border: `1px solid ${c.border}`, color: c.text, fontSize: 13, fontWeight: 800, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0 }}>
+                                <span style={{ fontSize: 10, opacity: 0.75, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{o.label.toUpperCase()}</span>
+                                <span style={{ fontSize: 18 }}>{o.prob}%</span>
+                              </button>
+                            )
+                          })}
+                          {isMobile && outcomes.length > 2 && (
+                            <div style={{ gridColumn: "span 2", textAlign: "center", fontSize: 12, color: "#8a94a6", fontWeight: 700, marginTop: 4 }}>
+                              +{outcomes.length - 2} more outcomes
+                            </div>
+                          )}
                         </div>
                         
                         {/* Simulate Button instead of Comments */}
                         <div style={{ display: "flex", flexDirection: "column", flex: 1, justifyContent: "center" }}>
-                          <Link href={`/simulate/mirofish?scenario=${encodeURIComponent(t.topic)}&domain=custom`} style={{ textDecoration: "none" }}>
+                          <Link href={buildMirofishHref(t, "kalshi")} style={{ textDecoration: "none" }}>
                             <div style={{ padding: "18px 24px", borderRadius: 12, background: "#ffffff", color: "#000000", fontSize: 16, fontWeight: 800, cursor: "pointer", display: "flex", justifyContent: "center", alignItems: "center", gap: 12, boxShadow: "0 8px 24px rgba(255,255,255,0.15)", transition: "transform 0.2s" }}>
                               <img src="/hemlo-icon.svg" alt="Hemlo" style={{ width: 26, height: 26, objectFit: "contain" }} />
                               Simulate This Market
@@ -552,47 +655,7 @@ export default function HomePage() {
           </AnimatePresence>
         </div>
 
-        {/* ── RIGHT: Trending/Breaking Panel (25%) ── */}
-        <div className="hide-mobile" style={{ display: "flex", flexDirection: "column", overflow: "hidden", background: "#050505" }}>
-          <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>Breaking news &gt;</div>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto", borderBottom: "1px solid var(--border)" }}>
-          {newsTopics.filter(t => t.urgency === "breaking" || t.urgency === "hot").slice(0, 6).map((t, i) => (
-              <div key={i} style={{ padding: "12px 20px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8, color: t.urgency === "breaking" ? "#ef4444" : "var(--accent)", flexShrink: 0 }}>
-                    {t.urgency}
-                  </span>
-                  <span style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>{t.category}</span>
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                  {t.topic}
-                </div>
-              </div>
-            ))}
-          </div>
-          
-          <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text-primary)" }}>Hot topics &gt;</div>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            {trending.data.slice(0, 5).map((t, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", borderBottom: "1px solid var(--border)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", width: 14 }}>{i + 1}</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>{t.topic}</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>{t.moneyAtStake ? t.moneyAtStake + " Vol" : "Trending"}</span>
-                  <Flame size={12} color="#ef4444" />
-                </div>
-              </div>
-            ))}
-            <div style={{ padding: "16px", textAlign: "center" }}>
-               <Link href="/hot" style={{ color: "var(--text-primary)", fontSize: 12, fontWeight: 700, textDecoration: "none", padding: "8px 24px", borderRadius: 20, border: "1px solid var(--border)" }}>Explore all</Link>
-            </div>
-          </div>
+          <HotSimulationsRail />
         </div>
       </div>
 

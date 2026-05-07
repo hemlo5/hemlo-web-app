@@ -1,24 +1,39 @@
 import { createClient } from "@supabase/supabase-js";
+import { createClient as createServerSupabase } from "@/utils/supabase/server";
 import SimulationResultInteractive, { SimulationPayload } from "@/components/simulation/SimulationResultInteractive";
 import { Metadata } from "next";
 import Link from "next/link";
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 // Force Next.js to dynamically render this route
 export const dynamic = "force-dynamic";
 
 async function fetchSimulation(simId: string): Promise<SimulationPayload | null> {
-  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-  const { data, error } = await supabase
+  const serverSupabase = await createServerSupabase();
+
+  // First try the authenticated user session. This keeps the result page aligned
+  // with the History page and avoids false "not found" responses under RLS.
+  try {
+    const { data, error } = await serverSupabase
+      .from("custom_simulations")
+      .select("*")
+      .eq("id", simId)
+      .maybeSingle();
+    if (!error && data) return data as SimulationPayload;
+  } catch {}
+
+  // Fallback for share/admin reads when a service-role key is available.
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return null;
+
+  const admin = createClient(url, serviceKey);
+  const { data } = await admin
     .from("custom_simulations")
     .select("*")
     .eq("id", simId)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) return null;
-  return data;
+  return (data as SimulationPayload | null) || null;
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ simId: string }> }): Promise<Metadata> {

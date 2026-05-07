@@ -420,15 +420,8 @@ function NewsDetailPanel({
   const handleSimulate = () => {
     // Build a meaningful prompt from the news topic
     const scenarioText = `What happens to public opinion, policy responses, and social dynamics if: "${topic.topic}"? ${topic.impact ? `Context: ${topic.impact}` : ""}`;
-    // Use the full topic details as the reality seed context
-    const seedText = [
-      topic.topic,
-      topic.impact,
-      topic.affectedGroups?.length ? `Affected groups: ${topic.affectedGroups.join(", ")}` : "",
-    ].filter(Boolean).join("\n\n");
-
     router.push(
-      `/simulate/mirofish?domain=${topic.category || "custom"}&scenario=${encodeURIComponent(scenarioText)}&seed=${encodeURIComponent(seedText)}&seedMode=write`,
+      `/simulate/mirofish?domain=${topic.category || "custom"}&scenario=${encodeURIComponent(scenarioText)}`,
     );
   };
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Check, ExternalLink, ArrowRight, Brain, Beaker, FileText, Settings2, PlayCircle } from "lucide-react";
+import { Loader2, Check, ArrowRight, Beaker, PlayCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MirofishGraphPanel } from "@/components/mirofish-graph-panel";
 
@@ -10,14 +10,13 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
   const router = useRouter();
 
   // Wizard state
-  const [uiStep, setUiStep] = useState(0); // 0: Scenario, 1: Reality Seed, 2: Parameters, 3: Running
+  const [uiStep, setUiStep] = useState(0); // 0: Scenario, 2: Parameters, 3: Running
 
   // Simulation settings
   const [domain] = useState(defaultDomain);
   const [scenario, setScenario] = useState("");
   const [seed, setSeed] = useState("");
   const seedRef = useRef(""); 
-  const [seedMode, setSeedMode] = useState<"write" | "upload" | "auto">("write");
   const [depthLevel, setDepthLevel] = useState<"standard" | "deep" | "super">("standard");
   const [agents, setAgents] = useState(25);
   const [rounds, setRounds] = useState(6);
@@ -165,7 +164,6 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
       if (data.seed) {
         seedRef.current = data.seed;
         setSeed(data.seed);
-        setSeedMode("write");
         return true;
       } else {
         setSeedError(data.error || "Seed generation returned empty response");
@@ -208,7 +206,7 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
     graphEdgesAccRef.current = [];
     setSteps(steps.map(s => ({ ...s, status: "pending", time: "" })));
     
-    if (seedMode === "auto" && !seed) {
+    {
       addLog(`→ Auto-generating context seed from your prompt...`);
       const genSuccess = await handleGenerateSeed();
       if (!genSuccess) {
@@ -349,7 +347,6 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
             </div>
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 24, fontWeight: 800 }}>
               {uiStep === 0 && "Define Scenario"}
-              {uiStep === 1 && "Inject Reality Seed"}
               {uiStep === 2 && "Tuning & Execution"}
             </div>
           </div>
@@ -368,7 +365,7 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
         {/* Stepper Dots */}
         {uiStep < 3 && (
           <div style={{ display: "flex", gap: 8 }}>
-            {[0, 1, 2].map(step => (
+            {[0, 2].map(step => (
               <div 
                 key={step} 
                 style={{
@@ -413,7 +410,7 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
                  <motion.button
                    whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                    disabled={!scenario.trim()}
-                   onClick={() => setUiStep(1)}
+                   onClick={() => setUiStep(2)}
                    style={{
                      padding: "14px 28px", background: scenario.trim() ? "var(--accent)" : "#222", 
                      color: scenario.trim() ? "#000" : "#555", borderRadius: 12, fontWeight: 800, fontSize: 15,
@@ -421,104 +418,7 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
                      display: "flex", alignItems: "center", gap: 10
                    }}
                  >
-                   Inject Context <ArrowRight size={18} />
-                 </motion.button>
-               </div>
-            </motion.div>
-          )}
-
-          {/* STEP 1: Reality Seed */}
-          {uiStep === 1 && (
-            <motion.div key="step1" variants={slideVariants} initial="hidden" animate="visible" exit="exit" style={{ display: "flex", flexDirection: "column", height: "100%", maxWidth: 640 }}>
-               
-               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                 <div style={{ color: "var(--text-secondary)", fontSize: 14, lineHeight: 1.6 }}>
-                   Provide background context. A rich Reality Seed drastically improves intelligence mapping.
-                 </div>
-               </div>
-
-                {/* Mode selector */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
-                  {[
-                    { id: "auto" as const, label: "Auto-generate", icon: <Brain size={16}/>, sub: "AI extrapolates context" },
-                    { id: "write" as const, label: "Manual Input", icon: <FileText size={16}/>, sub: "Type or paste details" },
-                    { id: "upload" as const, label: "Upload File", icon: <ExternalLink size={16}/>, sub: "PDF, MD, TXT" },
-                  ].map(m => (
-                    <button
-                      key={m.id}
-                      onClick={() => { setSeedMode(m.id); setSeed(""); }}
-                      style={{
-                        padding: "16px 14px",
-                        background: seedMode === m.id ? "rgba(204,255,0,0.08)" : "#050810",
-                        border: `1px solid ${seedMode === m.id ? "var(--accent)" : "var(--border)"}`,
-                        color: seedMode === m.id ? "var(--text-primary)" : "var(--text-muted)",
-                        cursor: "pointer",
-                        borderRadius: 12,
-                        textAlign: "left",
-                        transition: "all 0.15s",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: "bold", marginBottom: 4 }}>
-                        {m.icon} {m.label}
-                      </div>
-                      <div style={{ fontSize: 10, color: seedMode === m.id ? "var(--accent)" : "#555", opacity: 0.7 }}>{m.sub}</div>
-                    </button>
-                  ))}
-                </div>
-
-                {seedMode === "write" && (
-                  <textarea
-                    value={seed}
-                    onChange={(e) => { seedRef.current = e.target.value; setSeed(e.target.value); }}
-                    placeholder={`Paste or write your reality seed here...\nDescribe key actors, events, context, and relationships.`}
-                    style={{ flex: 1, minHeight: 180, background: "#050810", border: "1px solid var(--border)", borderRadius: 12, color: "var(--text-primary)", padding: 20, fontSize: 14, outline: "none", resize: "none", lineHeight: 1.6 }}
-                  />
-                )}
-
-                {seedMode === "upload" && (
-                  <div
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const file = e.dataTransfer.files[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = (ev) => setSeed(ev.target?.result as string || "");
-                      reader.readAsText(file);
-                    }}
-                    onClick={() => { const i = document.createElement("input"); i.type = "file"; i.accept = ".pdf,.md,.txt"; i.onchange = (e: any) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = (ev) => setSeed(ev.target?.result as string || ""); r.readAsText(f); }; i.click(); }}
-                    style={{ flex: 1, minHeight: 180, border: "1px dashed var(--border)", borderRadius: 12, padding: "48px 32px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#050810", cursor: "pointer" }}
-                  >
-                    <div style={{ fontSize: 24, color: "#444", marginBottom: 12 }}>↑</div>
-                    <div style={{ color: "#aaa", fontSize: 14, marginBottom: 6 }}>Drag and drop a file</div>
-                    <div style={{ color: "#666", fontSize: 12 }}>or click to browse — PDF, MD, TXT</div>
-                    {seed && <div style={{ marginTop: 16, fontSize: 12, color: "var(--accent)" }}>✓ File loaded ({seed.length} chars)</div>}
-                  </div>
-                )}
-
-                {seedMode === "auto" && (
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", background: "#050810", border: "1px solid var(--border)", borderRadius: 12, padding: 32 }}>
-                    <div style={{ textAlign: "center", marginBottom: 20 }}>
-                      <Brain size={48} color="var(--accent)" style={{ opacity: 0.5, marginBottom: 16 }} />
-                      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Automated Seed Generation</div>
-                      <div style={{ fontSize: 13, color: "var(--text-secondary)", maxWidth: 300, margin: "0 auto" }}>We will securely query the LLM to map out the geopolitical context of your scenario automatically before running the simulation.</div>
-                    </div>
-                  </div>
-                )}
-
-               <div style={{ marginTop: "auto", paddingTop: 24, display: "flex", justifyContent: "space-between" }}>
-                 <button onClick={() => setUiStep(0)} style={{ padding: "14px 24px", background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 12, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Back</button>
-                 <motion.button
-                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                   onClick={() => setUiStep(2)}
-                   style={{
-                     padding: "14px 28px", background: "var(--accent)", 
-                     color: "#000", borderRadius: 12, fontWeight: 800, fontSize: 15,
-                     border: "none", cursor: "pointer",
-                     display: "flex", alignItems: "center", gap: 10
-                   }}
-                 >
-                   Simulation Settings <Settings2 size={18} />
+                   Simulation Settings <ArrowRight size={18} />
                  </motion.button>
                </div>
             </motion.div>
@@ -571,7 +471,7 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
                 </div>
 
                <div style={{ marginTop: "auto", paddingTop: 24, display: "flex", justifyContent: "space-between" }}>
-                 <button onClick={() => setUiStep(1)} style={{ padding: "14px 24px", background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 12, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Back</button>
+                 <button onClick={() => setUiStep(0)} style={{ padding: "14px 24px", background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 12, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Back</button>
                  <motion.button
                    whileHover={{ scale: 1.02, boxShadow: "0 4px 24px rgba(204,255,0,0.3)" }} 
                    whileTap={{ scale: 0.98 }}

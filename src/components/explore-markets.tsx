@@ -7,19 +7,20 @@ import { PolyDetailModal, type PolyMarket } from "./poly-detail-modal";
 
 // ── CATEGORIES ────────────────────────────────────────────────────────────────
 const POLY_CATS = [
-  { key: "trending",          label: "Trending" },
-  { key: "politics",          label: "Elections" },
-  { key: "politics-general",  label: "Politics" },
-  { key: "sports",            label: "Sports" },
-  { key: "entertainment",     label: "Culture" },
-  { key: "crypto",            label: "Crypto" },
-  { key: "finance",           label: "Commodities" },
-  { key: "world",             label: "Climate" },
-  { key: "economics",         label: "Economics" },
-  { key: "mentions",          label: "Mentions" },
-  { key: "companies",         label: "Companies" },
-  { key: "financials",        label: "Financials" },
-  { key: "tech",              label: "Tech & Science" },
+  { key: "trending",      label: "Trending" },
+  { key: "breaking",      label: "Breaking" },
+  { key: "new",           label: "New" },
+  { key: "politics",      label: "Elections" },
+  { key: "sports",        label: "Sports" },
+  { key: "crypto",        label: "Crypto" },
+  { key: "esports",       label: "Esports" },
+  { key: "iran",          label: "Iran" },
+  { key: "finance",       label: "Finance" },
+  { key: "geopolitics",   label: "Geopolitics" },
+  { key: "tech",          label: "Tech" },
+  { key: "culture",       label: "Culture" },
+  { key: "economy",       label: "Economy" },
+  { key: "weather",       label: "Weather" },
 ];
 
 // ── TOP-LEVEL TABS ────────────────────────────────────────────────────────────
@@ -89,6 +90,33 @@ function kalshiToPolyMarket(k: KalshiMarket): PolyMarket {
 
 // Outcome row colors — first 2 are green/red for binary, rest for multi-choice
 const OUTCOME_COLORS = ["#22c55e", "#ef4444", "#3b82f6", "#f59e0b", "#a855f7", "#ec4899"];
+const MARKET_CARD_BG = "#121821";
+const MARKET_CARD_HOVER_BG = "#171f2a";
+const MARKET_CARD_BORDER = "#2a3444";
+const MARKET_PANEL_BG = "#080b11";
+
+function encodeMarketOutcomes(m: Pick<PolyMarket, "outcomes" | "marketType">) {
+  const raw = Array.isArray(m.outcomes) ? m.outcomes : [];
+  const outcomes = raw
+    .filter((o) => o?.label)
+    .slice(0, 12)
+    .map((o) => ({
+      label: String(o.label).trim(),
+      prob: Number.isFinite(Number(o.prob)) ? Math.round(Number(o.prob)) : undefined,
+    }));
+
+  const normalized = outcomes.length >= 2
+    ? outcomes
+    : [
+        { label: "Yes", prob: outcomes[0]?.prob ?? 50 },
+        { label: "No", prob: 100 - (outcomes[0]?.prob ?? 50) },
+      ];
+
+  return {
+    marketType: m.marketType || (normalized.length > 2 ? "categorical" : "binary"),
+    outcomesParam: encodeURIComponent(JSON.stringify(normalized)),
+  };
+}
 
 // ── KALSHI CARD ───────────────────────────────────────────────────────────────
 function KalshiCard({ m, onClick }: { m: KalshiMarket; onClick: () => void }) {
@@ -107,11 +135,11 @@ function KalshiCard({ m, onClick }: { m: KalshiMarket; onClick: () => void }) {
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ borderColor: "#2d3748", backgroundColor: "#11141b" }}
+      whileHover={{ borderColor: "#3a4658", backgroundColor: MARKET_CARD_HOVER_BG }}
       onClick={onClick}
       style={{
-        background: "#0c0f16",
-        border: "1px solid #1f2330",
+        background: MARKET_CARD_BG,
+        border: `1px solid ${MARKET_CARD_BORDER}`,
         borderRadius: 14,
         padding: "16px 20px",
         display: "flex",
@@ -119,6 +147,7 @@ function KalshiCard({ m, onClick }: { m: KalshiMarket; onClick: () => void }) {
         cursor: "pointer",
         transition: "all 0.2s",
         minHeight: 220,
+        boxShadow: "0 14px 34px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.03)",
       }}
     >
       {/* Header: Wikipedia image + category badge */}
@@ -199,17 +228,18 @@ function KalshiCard({ m, onClick }: { m: KalshiMarket; onClick: () => void }) {
 
 // ── POLYMARKET MINI CARD ──────────────────────────────────────────────────────
 function PolyCard({ m, onClick }: { m: PolyMarket; onClick: () => void }) {
-  const topTwo = m.outcomes.slice(0, 2);
-  const colors = ["#00c46a", "#3b82f6", "#f59e0b", "#a855f7"];
+  const isCategorical = m.marketType === "categorical";
+  const displayOutcomes = m.outcomes.slice(0, 2);
+  const colors = ["#22c55e", "#ef4444", "#3b82f6", "#f59e0b"];
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ borderColor: "#333", backgroundColor: "#11141b" }}
+      whileHover={{ borderColor: "#3a4658", backgroundColor: MARKET_CARD_HOVER_BG }}
       style={{
-        background: "#0c0f16",
-        border: "1px solid #1f2330",
+        background: MARKET_CARD_BG,
+        border: `1px solid ${MARKET_CARD_BORDER}`,
         borderRadius: 14,
         padding: "16px 20px",
         display: "flex",
@@ -217,6 +247,7 @@ function PolyCard({ m, onClick }: { m: PolyMarket; onClick: () => void }) {
         cursor: "pointer",
         transition: "all 0.2s",
         minHeight: 220,
+        boxShadow: "0 14px 34px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.03)",
       }}
       onClick={onClick}
     >
@@ -238,27 +269,29 @@ function PolyCard({ m, onClick }: { m: PolyMarket; onClick: () => void }) {
         {m.question}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
-        {topTwo.map((o, i) => {
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+        {displayOutcomes.map((o, i) => {
           const color = colors[i % colors.length];
           return (
             <div key={o.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                  <span style={{ color: "#d1d5db", fontSize: 11, fontWeight: 600 }}>{o.label}</span>
+                  <span style={{ color: "#d1d5db", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{o.label}</span>
                 </div>
                 <div style={{ height: 3, background: "#1f2330", borderRadius: 3, overflow: "hidden" }}>
                   <div style={{ height: "100%", width: `${o.prob}%`, background: color, borderRadius: 3 }} />
                 </div>
               </div>
-              <div style={{ border: `1px solid ${color}`, borderRadius: 20, padding: "3px 10px", minWidth: 50, textAlign: "center" }}>
+              <div style={{ border: `1px solid ${color}`, borderRadius: 20, padding: "3px 10px", minWidth: 46, textAlign: "center", flexShrink: 0 }}>
                 <span style={{ color: "#fff", fontSize: 12, fontWeight: 700 }}>{Math.round(o.prob)}%</span>
               </div>
             </div>
           );
         })}
         {m.outcomes.length > 2 && (
-          <span style={{ fontSize: 10, color: "#8a94a6", fontStyle: "italic" }}>+{m.outcomes.length - 2} more outcomes</span>
+          <span style={{ fontSize: 10, color: "#8a94a6", fontStyle: "italic", marginTop: 2 }}>
+            +{m.outcomes.length - 2} more outcomes
+          </span>
         )}
       </div>
 
@@ -503,7 +536,7 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
 
         {/* ── POLYMARKET PANEL ─────────────────────────────────────────────── */}
         {topTab === "polymarket" && (
-          <div style={{ background: "#0c0f16", border: "1px solid #1a1f2e", borderRadius: "0 12px 12px 12px", padding: "20px 20px 24px" }}>
+          <div style={{ background: MARKET_PANEL_BG, border: "1px solid #1f2735", borderRadius: "0 12px 12px 12px", padding: "20px 20px 24px" }}>
             <CatTabs
               active={activeCat}
               onSelect={k => { setActiveCat(k); setSearchQuery(""); setSearchInput(""); }}
@@ -548,7 +581,7 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
                   whileHover={{ scale: 1.02, borderColor: "var(--accent)" }} whileTap={{ scale: 0.98 }}
                   onClick={() => setPolyLimit(p => p + 24)}
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 28px",
-                    borderRadius: 12, border: "1px solid var(--border)", background: "#0c0f16",
+                    borderRadius: 12, border: "1px solid var(--border)", background: MARKET_PANEL_BG,
                     color: "#ffffff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                   Load More <ExternalLink size={14} />
                 </motion.button>
@@ -559,7 +592,7 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
 
         {/* ── KALSHI PANEL ─────────────────────────────────────────────────── */}
         {topTab === "kalshi" && (
-          <div style={{ background: "#0c0f16", border: "1px solid #1a1f2e", borderRadius: "0 12px 12px 12px", padding: "20px 20px 24px" }}>
+          <div style={{ background: MARKET_PANEL_BG, border: "1px solid #1f2735", borderRadius: "0 12px 12px 12px", padding: "20px 20px 24px" }}>
             <CatTabs
               active={kalshiActiveCat}
               onSelect={k => setKalshiActiveCat(k)}
@@ -635,7 +668,7 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
                   onClick={loadMoreKalshi}
                   disabled={kalshiLoadingMore}
                   style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 28px",
-                    borderRadius: 12, border: "1px solid #1f2330", background: "#0c0f16",
+                    borderRadius: 12, border: "1px solid #1f2330", background: MARKET_PANEL_BG,
                     color: "#22c55e", fontSize: 13, fontWeight: 700,
                     cursor: kalshiLoadingMore ? "default" : "pointer", opacity: kalshiLoadingMore ? 0.6 : 1 }}>
                   {kalshiLoadingMore ? <><Loader2 size={14} />&nbsp;Loading…</> : <>Load More <ExternalLink size={14} /></>}
@@ -653,7 +686,8 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
               onClose={() => setSelected(null)}
               onSimulate={() => {
                 const dom = topTab === "polymarket" ? "polymarket" : "kalshi";
-                window.location.href = `/simulate/mirofish?scenario=${encodeURIComponent(selected.question)}&seedMode=auto&domain=${dom}&marketId=${encodeURIComponent(selected.id)}&vol=${encodeURIComponent(selected.volume)}&liq=${encodeURIComponent(selected.liquidityClob || 0)}&last=${encodeURIComponent(selected.lastTradePrice || 0)}&img=${encodeURIComponent(selected.icon || selected.image || '')}`;
+                const { marketType, outcomesParam } = encodeMarketOutcomes(selected);
+                window.location.href = `/simulate/mirofish?scenario=${encodeURIComponent(selected.question)}&domain=${dom}&marketId=${encodeURIComponent(selected.id)}&vol=${encodeURIComponent(selected.volume)}&liq=${encodeURIComponent(selected.liquidityClob || 0)}&last=${encodeURIComponent(selected.lastTradePrice || 0)}&img=${encodeURIComponent(selected.icon || selected.image || '')}&marketType=${encodeURIComponent(marketType)}&outcomes=${outcomesParam}`;
               }}
             />
           )}

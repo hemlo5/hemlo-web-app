@@ -8,13 +8,14 @@ import { createClient } from "@/utils/supabase/client";
 import { motion } from "framer-motion";
 import {
   TrendingUp, MapPin, Zap, Settings, History,
-  BarChart2, Home, Newspaper, Cpu, X,
+  BarChart2, Home, Newspaper, Cpu, X, Crown,
 } from "lucide-react";
 
 const MODES = [
   { icon: BarChart2, label: "Polymarket", href: "/polymarket", active: true, iconUrl: "/polymarket.webp" },
   { icon: BarChart2, label: "Kalshi",     href: "/kalshi",     active: true, iconUrl: "/kalshi.webp" },
   { icon: Cpu,       label: "Simulate",   href: "/simulate/mirofish",active: true, iconUrl: "/logo.svg" },
+  { icon: History,   label: "History",    href: "/history",    active: true },
 ];
 
 const MOBILE_MODES = [
@@ -22,6 +23,7 @@ const MOBILE_MODES = [
   { icon: BarChart2, label: "Kalshi",     href: "/kalshi",     active: true, iconUrl: "/kalshi.webp" },
   { icon: Cpu,       label: "Simulate",   href: "/simulate/mirofish",active: true, iconUrl: "/logo.svg" },
   { icon: History,   label: "History",    href: "/history",          active: true },
+  { icon: Crown,     label: "Pricing",    href: "/pricing",          active: true },
 ];
 
 // ── PORTALLED SIGN-IN MODAL ─────────────────────────────────────────────────
@@ -235,10 +237,10 @@ export function Sidebar() {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "0 8px", width: "100%" }}>
-          <Link href="/history" title="History" style={{ textDecoration: "none" }}>
+          <Link href="/pricing" title="Pricing" style={{ textDecoration: "none" }}>
             <div style={{ padding: "10px", borderRadius: 6, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer" }}>
-              <History size={18} color="var(--text-muted)" />
-              <span style={{ fontSize: 10, color: "var(--text-muted)" }}>History</span>
+              <Crown size={18} color="var(--text-muted)" />
+              <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Pricing</span>
             </div>
           </Link>
           <div onClick={handleUserClick} title={user ? `${user.user_metadata?.full_name || user.email} · ${tier}` : "Sign In"}

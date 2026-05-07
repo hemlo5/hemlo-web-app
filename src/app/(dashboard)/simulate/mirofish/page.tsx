@@ -28,6 +28,51 @@ const DOMAIN_EXAMPLES: Record<string, string> = {
   custom: "",
 };
 
+type MarketOutcome = { label: string; prob?: number; tokenId?: string; clobTokenId?: string };
+
+function parseMarketOutcomesParam(raw: string | null): MarketOutcome[] {
+  if (!raw) return [];
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    try {
+      parsed = JSON.parse(decodeURIComponent(raw));
+    } catch {
+      return [];
+    }
+  }
+
+  const arr = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.outcomes) ? parsed.outcomes : [];
+  const seen = new Set<string>();
+  return arr
+    .map((o: any) => ({
+      label: String(o?.label || o?.name || "").trim(),
+      prob: Number.isFinite(Number(o?.prob)) ? Math.round(Number(o.prob)) : undefined,
+      tokenId: o?.tokenId || o?.clobTokenId,
+      clobTokenId: o?.clobTokenId || o?.tokenId,
+    }))
+    .filter((o: MarketOutcome) => {
+      const key = o.label.toLowerCase();
+      if (!o.label || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 12);
+}
+
+function appendMarketOutcomesToSeed(base: string, outcomes: MarketOutcome[]) {
+  const seedText = (base || "").trim();
+  if (!outcomes.length || seedText.includes("## Prediction Market Outcomes")) return seedText;
+  const lines = [
+    "## Prediction Market Outcomes",
+    "The simulation must evaluate the question against these exact market outcomes:",
+    ...outcomes.map((o) => `- ${o.label}${o.prob !== undefined ? ` (current market price: ${o.prob}%)` : ""}`),
+    "Agents should choose among these outcomes, not collapse the market into a generic yes/no question.",
+  ];
+  return `${seedText || "Simulation context unavailable."}\n\n${lines.join("\n")}`;
+}
+
 
 function MirofishTerminalContent() {
   const router = useRouter();
@@ -38,15 +83,13 @@ function MirofishTerminalContent() {
   const [scenario, setScenario] = useState("");
   const [seed, setSeed] = useState("");
   const seedRef = useRef(""); // keep ref in sync so startSimulation always reads latest
-  const testModeRef = useRef(false); // set true for Quick Test runs
-  const [seedMode, setSeedMode] = useState<"write" | "upload" | "auto">("auto");
   const [depthLevel, setDepthLevel] = useState<"standard" | "deep" | "super">("standard");
   const [agents, setAgents] = useState(15);
   const [rounds, setRounds] = useState(5);
   const [parallelGen, setParallelGen] = useState(3);
   const [llmModel, setLlmModel] = useState("deepseek-v3");
 
-  const [subStep, setSubStep] = useState<"prompt" | "seed" | "params">("prompt");
+  const [subStep, setSubStep] = useState<"prompt" | "params">("prompt");
   const [depthMode, setDepthMode] = useState<"standard" | "super" | "deep" | "custom">("standard");
   const [standardUses, setStandardUses] = useState(0); // For free tier limit demo
 
@@ -57,6 +100,10 @@ function MirofishTerminalContent() {
   const [seedError, setSeedError] = useState("");
   const [tavilyQuery, setTavilyQuery] = useState("");
   const [tavilyContext, setTavilyContext] = useState("");
+  const [marketOutcomes, setMarketOutcomes] = useState<MarketOutcome[]>([]);
+  const [marketType, setMarketType] = useState<"binary" | "categorical" | "">("");
+  const [marketQuestions, setMarketQuestions] = useState<string[]>([]);
+  const [marketQuestionIndex, setMarketQuestionIndex] = useState(0);
 
   // Fetch user tier on mount
   useEffect(() => {
@@ -64,6 +111,52 @@ function MirofishTerminalContent() {
       if (d.tier) setUserTier(d.tier)
     }).catch(() => {})
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fallbackQuestions = [
+      "When will Bitcoin hit $150k?",
+      "Democratic Presidential Nominee 2028",
+      "Who will win the 2026 NBA Championship?",
+      "Will there be a US x Iran peace deal in 2026?",
+    ];
+
+    const addQuestion = (questions: string[], raw: unknown) => {
+      const text = String(raw || "").trim();
+      if (!text) return;
+      const key = text.toLowerCase();
+      if (!questions.some((q) => q.toLowerCase() === key)) questions.push(text);
+    };
+
+    async function loadMarketQuestions() {
+      const questions: string[] = [];
+      const requests = [
+        fetch("/api/simulations-completed")
+          .then((r) => r.json())
+          .then((d) => (d.data || []).forEach((item: any) => addQuestion(questions, item.topic || item.question || item.title))),
+        fetch("/api/polymarket-browse?category=trending&limit=12")
+          .then((r) => r.json())
+          .then((d) => (d.markets || []).forEach((market: any) => addQuestion(questions, market.question || market.title))),
+        fetch("/api/kalshi-markets?category=trending")
+          .then((r) => r.json())
+          .then((d) => (d.markets || []).forEach((market: any) => addQuestion(questions, market.title || market.question))),
+      ];
+
+      await Promise.allSettled(requests);
+      if (!cancelled) setMarketQuestions((questions.length ? questions : fallbackQuestions).slice(0, 24));
+    }
+
+    loadMarketQuestions();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (marketQuestions.length <= 1) return;
+    const id = window.setInterval(() => {
+      setMarketQuestionIndex((idx) => (idx + 1) % marketQuestions.length);
+    }, 3400);
+    return () => window.clearInterval(id);
+  }, [marketQuestions.length]);
 
   // ── Launch queue state: provides immediate feedback between button click and SSE start
   const [isLaunching, setIsLaunching] = useState(false);
@@ -76,21 +169,15 @@ function MirofishTerminalContent() {
     const d = searchParams.get("domain");
     const a = searchParams.get("agents");
     const r = searchParams.get("rounds");
-    const seedParam = searchParams.get("seed");
 
     if (s) setScenario(s);
     if (d) setDomain(d);
     if (a) setAgents(parseInt(a) || 100);
     if (r) setRounds(parseInt(r) || 10);
-    if (seedParam) {
-      seedRef.current = seedParam;
-      setSeed(seedParam);
-      setSeedMode("write");
-    }
-    const sm = searchParams.get("seedMode");
-    if (sm === "auto" || sm === "write" || sm === "upload") {
-      setSeedMode(sm as any);
-    }
+    const parsedOutcomes = parseMarketOutcomesParam(searchParams.get("outcomes") || searchParams.get("options"));
+    setMarketOutcomes(parsedOutcomes);
+    const mt = searchParams.get("marketType");
+    if (mt === "binary" || mt === "categorical") setMarketType(mt);
   }, [searchParams]);
 
   const [marketStats, setMarketStats] = useState<{id?: string, vol?: string, liq?: string, last?: string, img?: string}>({});
@@ -137,20 +224,24 @@ function MirofishTerminalContent() {
   const graphEdgesAccRef = useRef<any[]>([]);
   const logsContainerRef = useRef<HTMLDivElement>(null); // ref on the scrollable box, NOT a sentinel
   const activeStepRef = useRef(0); // mirror of activeStep for use inside closures
+  const stepTimesRef = useRef<Record<string, number>>({}); // step name → Date.now() when it started
+  const [liveTimings, setLiveTimings] = useState<Record<string, number>>({}); // step → elapsed seconds
+
 
   // Computed
   // Accurate runtime estimate: each "batch" takes ~2.5s, plus 60s fixed setup overhead
   const estimatedSeconds = Math.round((agents * rounds) / parallelGen * 2.5) + 60;
   const estMins = Math.floor(estimatedSeconds / 60);
   const estSecs = estimatedSeconds % 60;
+  const rotatingMarketQuestion = marketQuestions[marketQuestionIndex] || "What are you thinking about today?";
   
   // ── PERSIST running state to sessionStorage so navigation away doesn't lose it
   useEffect(() => {
     if (phase === "running" && miroProjectId && !isCompletingRef.current) {
-      const payload = { phase, elapsed, activeStep, steps, liveLogs, miroProjectId, scenario, domain, agents, rounds, llmModel, parallelGen };
+      const payload = { phase, elapsed, activeStep, steps, liveLogs, miroProjectId, scenario, domain, seed: seedRef.current || seed, agents, rounds, llmModel, parallelGen, marketOutcomes, marketType };
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
     }
-  }, [phase, elapsed, activeStep, steps, liveLogs, miroProjectId]);
+  }, [phase, elapsed, activeStep, steps, liveLogs, miroProjectId, scenario, domain, seed, agents, rounds, llmModel, parallelGen, marketOutcomes, marketType]);
 
   // Keep activeStepRef in sync
   useEffect(() => { activeStepRef.current = activeStep; }, [activeStep]);
@@ -200,6 +291,8 @@ function MirofishTerminalContent() {
       if (saved.domain) setDomain(saved.domain);
       if (saved.agents) setAgents(saved.agents);
       if (saved.rounds) setRounds(saved.rounds);
+      if (Array.isArray(saved.marketOutcomes)) setMarketOutcomes(saved.marketOutcomes);
+      if (saved.marketType === "binary" || saved.marketType === "categorical") setMarketType(saved.marketType);
 
       timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
 
@@ -215,18 +308,24 @@ function MirofishTerminalContent() {
       const url = new URL(MODAL_URL);
       url.searchParams.append("question", saved.scenario || "");
       url.searchParams.append("sim_id", simDbId);
-      url.searchParams.append("reality_seed", saved.scenario || "");
+      url.searchParams.append("reality_seed", saved.seed || saved.scenario || "");
       url.searchParams.append("agent_count", String(saved.agents || 25));
       url.searchParams.append("rounds", String(saved.rounds || 6));
       url.searchParams.append("domain", saved.domain || "custom");
+      if (Array.isArray(saved.marketOutcomes) && saved.marketOutcomes.length > 0) {
+        url.searchParams.append("market_options", JSON.stringify(saved.marketOutcomes));
+        url.searchParams.append("market_type", saved.marketType || (saved.marketOutcomes.length > 2 ? "categorical" : "binary"));
+      }
 
       const startT = Date.now();
       const getT = () => formatSecs(Math.floor((Date.now() - startT) / 1000));
 
       const es = new EventSource(url.toString());
       esRef.current = es;
+      let transientReconnectErrors = 0;
 
       es.onmessage = (e) => {
+        transientReconnectErrors = 0;
         try {
           const event = JSON.parse(e.data);
           if (event.message) addLogR(`  [modal] ${event.message}`);
@@ -266,11 +365,16 @@ function MirofishTerminalContent() {
       };
 
       es.onerror = () => {
-        es.close();
-        clearInterval(timerRef.current);
-        addLogR("✗ Connection to Modal engine lost after reconnect.");
-        isCompletingRef.current = true;
-        sessionStorage.removeItem(SESSION_KEY);
+        if (isCompletingRef.current) return;
+        transientReconnectErrors += 1;
+        addLogR(`⚠ Modal stream interrupted after restore. Waiting for automatic reconnect (${transientReconnectErrors}/8)...`);
+        if (transientReconnectErrors >= 8) {
+          es.close();
+          clearInterval(timerRef.current);
+          addLogR("✗ Connection to Modal engine lost after repeated reconnect attempts.");
+          isCompletingRef.current = true;
+          sessionStorage.removeItem(SESSION_KEY);
+        }
       };
     })();
   }, []); // run once on mount
@@ -316,7 +420,6 @@ function MirofishTerminalContent() {
         seedRef.current = data.seed;
         setSeed(data.seed);
         setGeneratedSeed(data.seed);
-        setSeedMode("write");
         // Store Tavily intel in state + sessionStorage for the results page to pick up
         const q = data.searchQuery || "";
         const ctx = data.tavilyContext || "";
@@ -407,8 +510,8 @@ function MirofishTerminalContent() {
       // Ignore — DB save will catch the limit server-side too
     }
 
-    // ── Step 2: Generate reality seed if auto mode (RAG pipeline)
-    if (seedMode === "auto") {
+    // Step 2: Always generate a grounded reality seed (RAG pipeline)
+    {
       setLaunchStep("🔍 Step 1/3 — Generating optimized search query...");
       // Small delay so the user sees the first step message
       await new Promise(r => setTimeout(r, 400));
@@ -420,6 +523,14 @@ function MirofishTerminalContent() {
       }
       setLaunchStep("✅ Reality seed grounded in real-time data. Launching simulation...");
       await new Promise(r => setTimeout(r, 500));
+    }
+
+    const activeMarketOutcomes = marketOutcomes;
+    const activeMarketType = marketType || (activeMarketOutcomes.length > 2 ? "categorical" : "binary");
+    const simulationSeed = appendMarketOutcomesToSeed(seedRef.current || seed || scenario, activeMarketOutcomes);
+    if (activeMarketOutcomes.length > 0) {
+      seedRef.current = simulationSeed;
+      setSeed(simulationSeed);
     }
 
     // ── Step 3: Transition UI to running state
@@ -443,7 +554,7 @@ function MirofishTerminalContent() {
         
       const dbRes = await fetch("/api/custom-simulations", {
         method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ scenario, domain: dbDomain, reality_seed: seedRef.current || seed || scenario, agent_count: agents, rounds, llm_model: llmModel, parallel_gen: parallelGen, platforms: ["twitter", "reddit"] })
+        body: JSON.stringify({ scenario, domain: dbDomain, reality_seed: simulationSeed, agent_count: agents, rounds, llm_model: llmModel, parallel_gen: parallelGen, platforms: ["twitter", "reddit"] })
       });
       const dbData = await dbRes.json();
       if (dbRes.status === 401) {
@@ -495,18 +606,43 @@ function MirofishTerminalContent() {
       const url = new URL(MODAL_URL);
       url.searchParams.append("question", scenario);
       url.searchParams.append("sim_id", simDbId);
-      url.searchParams.append("reality_seed", seedRef.current || seed || scenario);
+      url.searchParams.append("reality_seed", simulationSeed);
       url.searchParams.append("agent_count", agents.toString());
       url.searchParams.append("rounds", rounds.toString());
       url.searchParams.append("domain", domain);
-      if (testModeRef.current) url.searchParams.append("test_mode", "true");
-      testModeRef.current = false; // reset after use
+      if (activeMarketOutcomes.length > 0) {
+        url.searchParams.append("market_options", JSON.stringify(activeMarketOutcomes));
+        url.searchParams.append("market_type", activeMarketType);
+      }
 
-      addLog(`→ Connecting to Modal Serverless Engine...`);
+    addLog(`→ Connecting to Modal Serverless Engine...`);
+
+      // ── Frontend step timer: records when each SSE step fires ──────────────
+      const _st = stepTimesRef.current;
+      const _recordStep = (finished: string, next: string) => {
+        const now = Date.now();
+        // Only log timing for 'finished' once (guard with _done flag)
+        if (_st[finished] && !_st[`${finished}_done`]) {
+          _st[`${finished}_done`] = 1;
+          const secs = Math.round((now - _st[finished]) / 100) / 10;
+          setLiveTimings(t => ({ ...t, [finished]: secs }));
+          addLog(`  ⏱ ${finished}: ${secs}s`);
+        }
+        // Only set start time for 'next' on its first occurrence
+        if (!_st[next]) {
+          _st[next] = now;
+        }
+      };
+
+      // Start the pipeline timer on first connection
+      _st['init'] = Date.now();
+
       
+      let transientSseErrors = 0;
       const es = new EventSource(url.toString());
 
       es.onmessage = (e) => {
+        transientSseErrors = 0;
         // Dismiss the launch overlay on first SSE message
         setIsLaunching(false);
         try {
@@ -521,8 +657,10 @@ function MirofishTerminalContent() {
 
           if (event.message) addLog(`  [modal] ${event.message}`);
 
-          if (event.step === "init") updateStep(0, "active");
-          if (event.step === "ontology" || event.step === "graph_build") updateStep(0, "active");
+          if (event.step === "init") { updateStep(0, "active"); _st['init'] = _st['init'] || Date.now(); }
+          if (event.step === "ontology") { _recordStep('init', 'ontology'); updateStep(0, "active"); }
+          if (event.step === "graph_build") { _recordStep('ontology', 'graph_build'); updateStep(0, "active"); }
+
 
           if (event.step === "graph_chunk" && event.data?.type && event.data?.items) {
             if (event.data.type === "nodes") {
@@ -551,9 +689,11 @@ function MirofishTerminalContent() {
             }
           }
 
-          if (event.step === "agents") updateStep(1, "active");
-          if (event.step === "config") updateStep(2, "active");
+          if (event.step === "agents") { _recordStep('graph_build', 'agents'); updateStep(1, "active"); }
+          if (event.step === "config") { _recordStep('agents', 'config'); updateStep(2, "active"); }
           if (event.step === "simulation") {
+            _recordStep('config', 'simulation');
+
             if (activeStep < 3) {
               updateStep(0, "done", getT());
               updateStep(1, "done", getT());
@@ -561,9 +701,14 @@ function MirofishTerminalContent() {
             }
             updateStep(3, "active");
           }
-          if (event.step === "report" || event.step === "persist") updateStep(4, "active");
+          if (event.step === "report" || event.step === "persist") { _recordStep('simulation', 'verdict'); updateStep(4, "active"); }
+
           
           if (event.step === "done" && event.status === "complete") {
+            _recordStep('verdict', 'done');
+            const totalSecs = _st['init'] ? Math.round((Date.now() - _st['init']) / 100) / 10 : null;
+            if (totalSecs) addLog(`  🏁 Total pipeline time: ${totalSecs}s`);
+
             es.close();
             clearInterval(timerRef.current);
             updateStep(3, "done", getT());
@@ -577,17 +722,46 @@ function MirofishTerminalContent() {
             };
 
             if (event.result) {
+              const resultBase = activeMarketOutcomes.length > 0
+                ? {
+                    ...event.result,
+                    options: Array.isArray(event.result.options) && event.result.options.length > 0
+                      ? event.result.options
+                      : activeMarketOutcomes.map((o) => o.label),
+                    market_outcomes: Array.isArray(event.result.market_outcomes) && event.result.market_outcomes.length > 0
+                      ? event.result.market_outcomes
+                      : activeMarketOutcomes,
+                    market_type: event.result.market_type || activeMarketType,
+                  }
+                : event.result;
+              const resultWithMarketOutcomes = marketStats.id || activeMarketOutcomes.length > 0
+                ? {
+                    ...resultBase,
+                    marketInfo: {
+                      ...(event.result.marketInfo || {}),
+                      source: domain,
+                      id: marketStats.id || event.result.marketInfo?.id,
+                      volume: marketStats.vol || event.result.marketInfo?.volume || "",
+                      liquidity: marketStats.liq || event.result.marketInfo?.liquidity || "",
+                      lastTradePrice: marketStats.last || event.result.marketInfo?.lastTradePrice || "",
+                      icon: marketStats.img || event.result.marketInfo?.icon || event.result.marketInfo?.image || "",
+                      image: marketStats.img || event.result.marketInfo?.image || event.result.marketInfo?.icon || "",
+                      marketType: activeMarketType,
+                      outcomes: activeMarketOutcomes,
+                    },
+                  }
+                : resultBase;
               fetch("/api/custom-simulations", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   id: simDbId,
                   status: "completed",
-                  result: event.result,
-                  report_text: event.result.report_text,
-                  round_logs: event.result.round_logs,
-                  confidence: event.result.confidence,
-                  primary_probability: event.result.primary_probability,
+                  result: resultWithMarketOutcomes,
+                  report_text: resultWithMarketOutcomes.report_text,
+                  round_logs: resultWithMarketOutcomes.round_logs,
+                  confidence: resultWithMarketOutcomes.confidence,
+                  primary_probability: resultWithMarketOutcomes.primary_probability,
                   runtime_seconds: Math.floor((Date.now() - startT) / 1000),
                   completed_at: new Date().toISOString()
                 })
@@ -615,10 +789,15 @@ function MirofishTerminalContent() {
 
       es.onerror = () => {
         setIsLaunching(false);
-        es.close();
-        isCompletingRef.current = true;
-        sessionStorage.removeItem(SESSION_KEY);
-        markFailed("Connection to Modal engine lost.");
+        if (isCompletingRef.current) return;
+        transientSseErrors += 1;
+        addLog(`⚠ Modal stream interrupted. Reconnecting automatically (${transientSseErrors}/8)...`);
+        if (transientSseErrors >= 8) {
+          es.close();
+          isCompletingRef.current = true;
+          sessionStorage.removeItem(SESSION_KEY);
+          markFailed("Connection to Modal engine lost after repeated reconnect attempts.");
+        }
       };
 
     } catch (e: any) {
@@ -714,7 +893,29 @@ function MirofishTerminalContent() {
     return `${m}:${ss<10?'0':''}${ss}`;
   }
 
-  const btnReady = !!scenario && (seedMode === "auto" || seed || scenario) && !isGeneratingSeed;
+  const btnReady = !!scenario && !isGeneratingSeed;
+  const isAuthLaunchError = !!launchError
+    && !launchError.startsWith("__")
+    && /session|sign in|authentication|unauthorized/i.test(launchError);
+
+  const handleSignIn = async () => {
+    try {
+      setLaunchStep("Redirecting to Google sign in...");
+      const supabase = createClient();
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent("/simulate/mirofish")}`;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+          queryParams: { prompt: "select_account", access_type: "offline" },
+        },
+      });
+      if (error) setLaunchError(`Sign in failed: ${error.message}`);
+    } catch (err: any) {
+      setLaunchError(`Sign in failed: ${err?.message || "Please try again."}`);
+    }
+  };
 
 
   return (
@@ -798,14 +999,26 @@ function MirofishTerminalContent() {
                   </div>
                 ) : (
                   // Generic error
-                  <button
-                    onClick={() => { setIsLaunching(false); setLaunchError(null); }}
-                    style={{
-                      padding: "10px 28px", borderRadius: 10, background: "rgba(255,255,255,0.08)",
-                      border: "1px solid rgba(255,255,255,0.15)", color: "#fff", fontSize: 13,
-                      fontWeight: 700, cursor: "pointer",
-                    }}
-                  >Dismiss & Retry</button>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center" }}>
+                    <button
+                      onClick={() => { setIsLaunching(false); setLaunchError(null); }}
+                      style={{
+                        padding: "10px 24px", borderRadius: 10, background: "rgba(255,255,255,0.08)",
+                        border: "1px solid rgba(255,255,255,0.15)", color: "#fff", fontSize: 13,
+                        fontWeight: 700, cursor: "pointer",
+                      }}
+                    >Dismiss & Retry</button>
+                    {isAuthLaunchError && (
+                      <button
+                        onClick={handleSignIn}
+                        style={{
+                          padding: "10px 26px", borderRadius: 10, background: "#ffffff",
+                          border: "1px solid rgba(255,255,255,0.85)", color: "#000000", fontSize: 13,
+                          fontWeight: 800, cursor: "pointer",
+                        }}
+                      >Sign in with Google</button>
+                    )}
+                  </div>
                 )}
               </motion.div>
             ) : (
@@ -938,10 +1151,22 @@ function MirofishTerminalContent() {
                     >
                       <div style={{ 
                         fontFamily: "'Space Grotesk', sans-serif",
-                        fontSize: "36px", fontWeight: 900, color: "#000000", marginBottom: "40px",
-                        textAlign: "center", letterSpacing: "-1px"
+                        fontSize: "clamp(24px, 4.6vw, 36px)", fontWeight: 900, color: "#000000", marginBottom: "40px",
+                        textAlign: "center", letterSpacing: "-1px", lineHeight: 1.08, minHeight: "78px",
+                        display: "flex", alignItems: "center", justifyContent: "center", maxWidth: "900px"
                       }}>
-                        What are you thinking about today?
+                        <AnimatePresence mode="wait">
+                          <motion.span
+                            key={rotatingMarketQuestion}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.32 }}
+                            style={{ display: "inline-block" }}
+                          >
+                            {rotatingMarketQuestion}
+                          </motion.span>
+                        </AnimatePresence>
                       </div>
                       <div style={{ 
                         width: "100%", background: "rgba(10,10,10,0.85)", backdropFilter: "blur(18px)", border: "1px solid rgba(255,255,255,0.08)",
@@ -951,7 +1176,7 @@ function MirofishTerminalContent() {
                         <textarea
                           value={scenario}
                           onChange={(e) => setScenario(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); setSubStep("seed"); } }}
+                          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); setSubStep("params"); } }}
                           placeholder="Tell us what you'd like to simulate..."
                           style={{ 
                             width: "100%", background: "transparent", border: "none", color: "#ffffff", 
@@ -967,7 +1192,7 @@ function MirofishTerminalContent() {
                           </div>
                           <button 
                             disabled={!scenario}
-                            onClick={() => setSubStep("seed")} 
+                            onClick={() => setSubStep("params")} 
                             style={{ 
                               width: 36, height: 36, borderRadius: "50%", background: scenario ? "#000" : "#ccc", border: "none", color: "#fff", 
                               display: "flex", alignItems: "center", justifyContent: "center", cursor: scenario ? "pointer" : "not-allowed", transition: "all 0.2s" 
@@ -980,64 +1205,6 @@ function MirofishTerminalContent() {
                     </motion.div>
                   )}
 
-                  {subStep === "seed" && (
-                    <motion.div
-                      key="seed"
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      style={{ display: "flex", flexDirection: "column" }}
-                    >
-                      <button onClick={() => setSubStep("prompt")} style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: 12, display: "flex", alignItems: "center", gap: 4 }}>
-                        ← BACK TO PROMPT
-                      </button>
-                      <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "28px", fontWeight: 900, color: "#000000", marginBottom: 8 }}>
-                        Reality Seed
-                      </div>
-                      <div style={{ fontSize: 14, color: "#666", marginBottom: 32 }}>
-                        Provide context or data for the simulation to ground itself in.
-                      </div>
-
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
-                        {[
-                          { id: "auto", label: "Autogenerate", desc: "AI builds a seed from your prompt" },
-                          { id: "write", label: "Write Manually", desc: "Input your own context text" },
-                          { id: "upload", label: "Upload File", desc: "PDF, TXT or CSV contextual data" },
-                        ].map(opt => (
-                          <button
-                            key={opt.id}
-                            onClick={() => setSeedMode(opt.id as any)}
-                            style={{
-                              padding: 20, borderRadius: 16, border: `2px solid ${seedMode === opt.id ? "#000" : "#eee"}`,
-                              background: seedMode === opt.id ? "#fff" : "transparent", textAlign: "left", cursor: "pointer", transition: "all 0.2s"
-                            }}
-                          >
-                            <div style={{ fontSize: 14, fontWeight: 800, color: "#000", marginBottom: 4 }}>{opt.label}</div>
-                            <div style={{ fontSize: 11, color: "#888", lineHeight: 1.4 }}>{opt.desc}</div>
-                          </button>
-                        ))}
-                      </div>
-
-                      {seedMode === "write" && (
-                        <textarea
-                          value={seed}
-                          onChange={(e) => { setSeed(e.target.value); seedRef.current = e.target.value; }}
-                          placeholder="Paste your context here..."
-                          style={{ width: "100%", height: 120, background: "#f5f5f7", border: "1px solid #e5e5e7", borderRadius: 12, padding: 16, fontSize: 14, outline: "none", marginBottom: 24 }}
-                        />
-                      )}
-
-                      <button
-                        onClick={() => setSubStep("params")}
-                        style={{
-                          width: "100%", padding: "16px", background: "#000", color: "#fff", borderRadius: 12, fontWeight: 800, fontSize: 14, cursor: "pointer", border: "none"
-                        }}
-                      >
-                        CONTINUE TO PARAMETERS
-                      </button>
-                    </motion.div>
-                  )}
-
                   {subStep === "params" && (
                     <motion.div
                       key="params"
@@ -1046,8 +1213,8 @@ function MirofishTerminalContent() {
                       exit={{ opacity: 0, x: -20 }}
                       style={{ display: "flex", flexDirection: "column" }}
                     >
-                      <button onClick={() => setSubStep("seed")} style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: 12, display: "flex", alignItems: "center", gap: 4 }}>
-                        ← BACK TO SEED
+                      <button onClick={() => setSubStep("prompt")} style={{ background: "transparent", border: "none", color: "#888", fontSize: 12, fontWeight: 700, cursor: "pointer", marginBottom: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                        BACK TO PROMPT
                       </button>
                       <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "28px", fontWeight: 900, color: "#000000", marginBottom: 32 }}>
                         Simulation Parameters
@@ -1131,21 +1298,6 @@ function MirofishTerminalContent() {
                       >
                         LAUNCH SIMULATION
                       </button>
-
-                      {/* Quick Test button — dev shortcut */}
-                      <button
-                        onClick={() => {
-                          testModeRef.current = true;
-                          startSimulation();
-                        }}
-                        style={{
-                          width: "100%", padding: "12px", background: "transparent", color: "#888",
-                          borderRadius: 12, fontWeight: 700, fontSize: 13, cursor: "pointer",
-                          border: "1px solid #333", marginTop: 8, letterSpacing: 0.5
-                        }}
-                      >
-                        ⚡ Quick Test (1 agent · 1 round · ~30s)
-                      </button>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -1204,20 +1356,53 @@ function MirofishTerminalContent() {
                 </div>
 
                 {/* Logs Section */}
-                <div style={{ background: "#0c0c0c", border: "1px solid #1a1a1a", borderRadius: 16, padding: "20px" }}>
-                  <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 1.5, fontWeight: 800, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#444" }} />
-                    Live Output Stream
+                <div style={{ background: "#050505", border: "1px solid #1f1f1f", borderRadius: 16, overflow: "hidden" }}>
+                  <div style={{ 
+                    padding: "14px 20px", borderBottom: "1px solid #1a1a1a",
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    background: "#0a0a0a"
+                  }}>
+                    <div style={{ fontSize: 11, color: "#fff", fontWeight: 800, letterSpacing: 1.5, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 8 }}>
+                      <motion.div
+                        animate={{ opacity: [1, 0.2, 1] }}
+                        transition={{ duration: 1.2, repeat: Infinity }}
+                        style={{ width: 7, height: 7, borderRadius: "50%", background: engineStatus === "running" ? "#22c55e" : "#f59e0b", boxShadow: engineStatus === "running" ? "0 0 8px #22c55e" : "0 0 8px #f59e0b" }}
+                      />
+                      Live Output Stream
+                    </div>
+                    <span style={{ fontSize: 10, color: "#555", fontFamily: "monospace", fontWeight: 700 }}>
+                      {liveLogs.length} lines
+                    </span>
                   </div>
-                  <div ref={logsContainerRef} style={{ height: 200, overflowY: "auto", fontFamily: "'Fira Code', monospace", fontSize: 12, scrollbarWidth: "none" }}>
-                    {liveLogs.length === 0 && <div style={{ color: "rgba(255,255,255,0.1)" }}>Waiting for pipeline signals...</div>}
-                    {liveLogs.map((log, i) => (
-                      <div key={i} style={{ color: log.includes("✓") ? "#22c55e" : log.includes("✗") ? "#ef4444" : "#888", marginBottom: 6, lineHeight: 1.5 }}>
-                        {log}
-                      </div>
-                    ))}
+                  <div 
+                    ref={logsContainerRef} 
+                    style={{ 
+                      height: 360, overflowY: "auto", 
+                      fontFamily: "'Fira Code', 'Cascadia Code', monospace", 
+                      fontSize: 12, lineHeight: 1.7,
+                      padding: "16px 20px",
+                      scrollbarWidth: "thin",
+                      scrollbarColor: "#222 transparent"
+                    }}
+                  >
+                    {liveLogs.length === 0 && (
+                      <div style={{ color: "#333", fontStyle: "italic" }}>Waiting for pipeline signals...</div>
+                    )}
+                    {liveLogs.map((log, i) => {
+                      const isSuccess = log.includes("✓") || log.includes("✅");
+                      const isError   = log.includes("✗") || log.includes("FAIL");
+                      const isWarn    = log.includes("⚠");
+                      const isRound   = log.includes("Round") || log.includes("▶");
+                      const color = isError ? "#ef4444" : isSuccess ? "#22c55e" : isWarn ? "#f59e0b" : isRound ? "#a78bfa" : "#888";
+                      return (
+                        <div key={i} style={{ color, marginBottom: 3, wordBreak: "break-word" }}>
+                          {log}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
+
               </div>
 
               {/* Sidebar: Workflow Pipeline */}
@@ -1271,6 +1456,39 @@ function MirofishTerminalContent() {
                        Allocating {agents} agents across 2 nodes
                     </div>
                  </div>
+
+                 {/* Live Step Timing Panel — fills in as each step completes */}
+                 {Object.keys(liveTimings).length > 0 && (
+                   <div style={{ marginTop: 16, padding: 16, background: "#0a0a0a", borderRadius: 16, border: "1px solid #1a1a1a" }}>
+                     <div style={{ fontSize: 10, color: "#555", fontWeight: 800, marginBottom: 12, letterSpacing: 1.5 }}>⏱ STEP TIMING</div>
+                     {(["init","ontology","graph_build","agents","config","simulation","verdict"] as const)
+                       .filter(k => liveTimings[k] !== undefined)
+                       .map(step => {
+                         const label: Record<string,string> = { init:"Init", ontology:"Ontology", graph_build:"Graph Build", agents:"Agents", config:"Config", simulation:"Simulation", verdict:"Verdict" };
+                         const secs = liveTimings[step];
+                         const color = secs < 10 ? "#22c55e" : secs < 45 ? "#f59e0b" : "#ef4444";
+                         const runningTotal = Object.values(liveTimings).reduce((a,b) => a+b, 0) || 1;
+                         const pct = Math.min(100, Math.round((secs / runningTotal) * 100));
+                         return (
+                           <div key={step} style={{ marginBottom: 10 }}>
+                             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                               <span style={{ fontSize: 11, color: "#888" }}>{label[step]}</span>
+                               <span style={{ fontSize: 11, fontWeight: 800, color, fontFamily: "monospace" }}>{secs}s</span>
+                             </div>
+                             <div style={{ height: 3, background: "#1a1a1a", borderRadius: 2, overflow: "hidden" }}>
+                               <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 2, transition: "width 0.5s ease" }} />
+                             </div>
+                           </div>
+                         );
+                       })}
+                     <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #1a1a1a", display: "flex", justifyContent: "space-between" }}>
+                       <span style={{ fontSize: 11, fontWeight: 800, color: "#fff" }}>TOTAL</span>
+                       <span style={{ fontSize: 11, fontWeight: 900, color: "#22c55e", fontFamily: "monospace" }}>
+                         {Object.values(liveTimings).reduce((a,b) => a+b, 0).toFixed(1)}s
+                       </span>
+                     </div>
+                   </div>
+                 )}
               </div>
 
             </div>

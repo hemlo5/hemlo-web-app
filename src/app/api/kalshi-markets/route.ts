@@ -8,17 +8,17 @@ const PAGE_SIZE   = 24; // cards per page (same as Polymarket)
 // ── CATEGORY MAPS ─────────────────────────────────────────────────────────────
 // Maps Kalshi's native category string → our POLY_CATS key
 const CAT_TO_KEY: Record<string, string> = {
-  "World":                   "world",
+  "World":                   "geopolitics",
   "Elections":               "politics",
-  "Climate and Weather":     "world",
+  "Climate and Weather":     "weather",
   "Science and Technology":  "tech",
-  "Politics":                "politics-general",
-  "Financials":              "financials",
-  "Entertainment":           "entertainment",
-  "Social":                  "mentions",
-  "Economics":               "economics",
+  "Politics":                "politics",
+  "Financials":              "finance",
+  "Entertainment":           "culture",
+  "Social":                  "culture",
+  "Economics":               "economy",
   "Health":                  "tech",
-  "Companies":               "companies",
+  "Companies":               "finance",
   "Sports":                  "sports",
   "Transportation":          "tech",
   "Crypto":                  "crypto",
@@ -45,21 +45,62 @@ const CAT_LABEL: Record<string, string> = {
   "Commodities":             "Commodities",
 };
 
-// Fallback images per catKey
-const CAT_FALLBACK: Record<string, string> = {
-  world:              "https://images.unsplash.com/photo-1526470608268-f674ce90ebd4?w=300&q=80",
-  politics:           "https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=300&q=80",
-  "politics-general": "https://images.unsplash.com/photo-1569163139599-0f4517e36f51?w=300&q=80",
-  tech:               "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=300&q=80",
-  financials:         "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=300&q=80",
-  finance:            "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=300&q=80",
-  entertainment:      "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&q=80",
-  mentions:           "https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=300&q=80",
-  economics:          "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=300&q=80",
-  companies:          "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=300&q=80",
-  sports:             "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=300&q=80",
-  crypto:             "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w=300&q=80",
-  trending:           "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=300&q=80",
+function unsplash(id: string) {
+  return `https://images.unsplash.com/${id}?auto=format&fit=crop&w=600&q=80`;
+}
+
+const CURATED_IMAGE_POOLS: Record<string, string[]> = {
+  geopolitics: [
+    unsplash("photo-1526470608268-f674ce90ebd4"),
+    unsplash("photo-1500530855697-b586d89ba3ee"),
+    unsplash("photo-1521295121783-8a321d551ad2"),
+  ],
+  politics: [
+    unsplash("photo-1541872703-74c5e44368f9"),
+    unsplash("photo-1569163139599-0f4517e36f51"),
+    unsplash("photo-1529107386315-e1a2ed48a620"),
+  ],
+  tech: [
+    unsplash("photo-1451187580459-43490279c0fa"),
+    unsplash("photo-1518770660439-4636190af475"),
+    unsplash("photo-1516321318423-f06f85e504b3"),
+  ],
+  finance: [
+    unsplash("photo-1611974789855-9c2a0a7236a3"),
+    unsplash("photo-1526304640581-d334cdbbf45e"),
+    unsplash("photo-1486406146926-c627a92ad1ab"),
+  ],
+  economy: [
+    unsplash("photo-1526304640581-d334cdbbf45e"),
+    unsplash("photo-1554224155-6726b3ff858f"),
+    unsplash("photo-1486406146926-c627a92ad1ab"),
+  ],
+  culture: [
+    unsplash("photo-1493225457124-a3eb161ffa5f"),
+    unsplash("photo-1485846234645-a62644f84728"),
+    unsplash("photo-1501386761578-eac5c94b800a"),
+  ],
+  sports: [
+    unsplash("photo-1461896836934-ffe607ba8211"),
+    unsplash("photo-1546519638-68e109498ffc"),
+    unsplash("photo-1517649763962-0c623066013b"),
+  ],
+  crypto: [
+    unsplash("photo-1621416894569-0f39ed31d247"),
+    unsplash("photo-1518546305927-5a555bb7020d"),
+    unsplash("photo-1640161704729-cbe966a08476"),
+  ],
+  weather: [
+    unsplash("photo-1504608524841-42fe6f032b4b"),
+    unsplash("photo-1534088568595-a066f410bcda"),
+    unsplash("photo-1469474968028-56623f02e42e"),
+  ],
+  trending: [
+    unsplash("photo-1611974789855-9c2a0a7236a3"),
+    unsplash("photo-1526470608268-f674ce90ebd4"),
+    unsplash("photo-1451187580459-43490279c0fa"),
+    unsplash("photo-1461896836934-ffe607ba8211"),
+  ],
 };
 
 // ── WIKIPEDIA IMAGE ───────────────────────────────────────────────────────────
@@ -74,29 +115,166 @@ function wikiQuery(title: string): string {
     .split(" ").filter((w) => w.length > 2).slice(0, 5).join(" ");
 }
 
-async function getWikiImage(query: string): Promise<string | null> {
-  if (!query || query.trim().length < 3) return null;
-  try {
+function hashString(value: string) {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function pickSeeded<T>(items: T[], seed: string): T | null {
+  if (!items.length) return null;
+  return items[hashString(seed) % items.length];
+}
+
+function cleanQuery(text: string) {
+  return text
+    .replace(/\b(will|who|what|when|how|which|does|is|can|did|the|be|in|on|by|of|a|an|to|for|as|at|from|before|after|above|below|more|than|over|under|between|within|without|per|years|quarter|month|season|market|kalshi|contract|event)\b/gi, " ")
+    .replace(/[^a-zA-Z0-9 &.-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const KEYWORD_IMAGE_QUERIES: Array<{ test: RegExp; query: string }> = [
+  { test: /\b(bitcoin|btc|ethereum|crypto|solana|doge|coinbase|binance)\b/i, query: "cryptocurrency" },
+  { test: /\b(fed|federal reserve|interest rate|rates|inflation|cpi|recession|unemployment|gdp|treasury)\b/i, query: "Federal Reserve" },
+  { test: /\b(nba|basketball|lakers|warriors|celtics|knicks|mavericks|thunder)\b/i, query: "basketball arena" },
+  { test: /\b(nfl|super bowl|football|chiefs|eagles|cowboys|packers)\b/i, query: "American football stadium" },
+  { test: /\b(mlb|baseball|world series|yankees|dodgers|mets)\b/i, query: "baseball stadium" },
+  { test: /\b(nhl|hockey|stanley cup)\b/i, query: "ice hockey arena" },
+  { test: /\b(election|president|senate|congress|governor|nominee|primary|democrat|republican)\b/i, query: "United States election" },
+  { test: /\b(weather|hurricane|storm|rain|snow|temperature|heat|tornado|climate)\b/i, query: "weather satellite" },
+  { test: /\b(ai|artificial intelligence|openai|nvidia|apple|tesla|spacex|microsoft|google|amazon|meta)\b/i, query: "technology" },
+  { test: /\b(oil|gas|energy|opec|crude|electricity|power)\b/i, query: "oil refinery" },
+  { test: /\b(movie|oscars|grammy|music|album|box office|celebrity|taylor swift|concert)\b/i, query: "entertainment" },
+  { test: /\b(china|iran|russia|ukraine|israel|gaza|taiwan|nato|war|peace|tariff)\b/i, query: "international relations" },
+];
+
+function marketImageQueries(title: string, category: string, outcomes: { label: string }[]) {
+  const queries: string[] = [];
+  const add = (value: string | null | undefined) => {
+    const q = cleanQuery(value || "");
+    if (q.length >= 3 && !queries.some((existing) => existing.toLowerCase() === q.toLowerCase())) {
+      queries.push(q);
+    }
+  };
+
+  for (const rule of KEYWORD_IMAGE_QUERIES) {
+    if (rule.test.test(title)) add(rule.query);
+  }
+
+  const firstSpecificOutcome = outcomes.find((o) => !/^(yes|no|other|leading)$/i.test(o.label));
+  add(firstSpecificOutcome?.label);
+  add(wikiQuery(title));
+  add(title);
+  add(category);
+
+  return queries.slice(0, 3);
+}
+
+const wikiImageCache = new Map<string, Promise<string[]>>();
+const commonsImageCache = new Map<string, Promise<string[]>>();
+
+async function getWikiImages(query: string): Promise<string[]> {
+  if (!query || query.trim().length < 3) return [];
+  const key = query.toLowerCase();
+  if (wikiImageCache.has(key)) return wikiImageCache.get(key)!;
+
+  const request = (async () => {
     const url = new URL("https://en.wikipedia.org/w/api.php");
     url.searchParams.set("action", "query");
     url.searchParams.set("generator", "search");
     url.searchParams.set("gsrsearch", query);
-    url.searchParams.set("gsrlimit", "1");
+    url.searchParams.set("gsrlimit", "5");
     url.searchParams.set("prop", "pageimages");
     url.searchParams.set("pithumbsize", "500");
     url.searchParams.set("format", "json");
-    const res = await fetch(url.toString(), {
-      headers: { "User-Agent": "HemloAI/1.0 (https://hemloai.com)" },
-      next: { revalidate: 86400 },
-      signal: AbortSignal.timeout(2500),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const pages = data?.query?.pages;
-    if (!pages) return null;
-    const first = Object.values(pages)[0] as any;
-    return first?.thumbnail?.source ?? null;
-  } catch { return null; }
+    try {
+      const res = await fetch(url.toString(), {
+        headers: { "User-Agent": "HemloAI/1.0 (https://hemloai.com)" },
+        next: { revalidate: 86400 },
+        signal: AbortSignal.timeout(2200),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const pages = data?.query?.pages;
+      if (!pages) return [];
+      return Object.values(pages)
+        .map((page: any) => page?.thumbnail?.source)
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  })();
+
+  wikiImageCache.set(key, request);
+  return request;
+}
+
+async function getCommonsImages(query: string): Promise<string[]> {
+  if (!query || query.trim().length < 3) return [];
+  const key = query.toLowerCase();
+  if (commonsImageCache.has(key)) return commonsImageCache.get(key)!;
+
+  const request = (async () => {
+    const url = new URL("https://commons.wikimedia.org/w/api.php");
+    url.searchParams.set("action", "query");
+    url.searchParams.set("generator", "search");
+    url.searchParams.set("gsrsearch", query);
+    url.searchParams.set("gsrnamespace", "6");
+    url.searchParams.set("gsrlimit", "6");
+    url.searchParams.set("prop", "imageinfo");
+    url.searchParams.set("iiprop", "url|mime");
+    url.searchParams.set("iiurlwidth", "500");
+    url.searchParams.set("format", "json");
+    try {
+      const res = await fetch(url.toString(), {
+        headers: { "User-Agent": "HemloAI/1.0 (https://hemloai.com)" },
+        next: { revalidate: 86400 },
+        signal: AbortSignal.timeout(2500),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const pages = data?.query?.pages;
+      if (!pages) return [];
+      return Object.values(pages)
+        .map((page: any) => {
+          const info = page?.imageinfo?.[0];
+          const mime = String(info?.mime || "");
+          if (!mime.startsWith("image/")) return "";
+          return info?.thumburl || info?.url || "";
+        })
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  })();
+
+  commonsImageCache.set(key, request);
+  return request;
+}
+
+function fallbackImage(catKey: string, seed: string) {
+  const pool = CURATED_IMAGE_POOLS[catKey] || CURATED_IMAGE_POOLS.trending;
+  return pickSeeded(pool, seed) || CURATED_IMAGE_POOLS.trending[0];
+}
+
+async function resolveMarketImage(card: MarketCard) {
+  for (const query of card.imageQueries || []) {
+    const wikiImages = await getWikiImages(query);
+    const selected = pickSeeded(wikiImages, `${card.id}:${query}:wiki`);
+    if (selected) return selected;
+  }
+
+  for (const query of (card.imageQueries || []).slice(0, 2)) {
+    const commonsImages = await getCommonsImages(query);
+    const selected = pickSeeded(commonsImages, `${card.id}:${query}:commons`);
+    if (selected) return selected;
+  }
+
+  return fallbackImage(card.catKey, `${card.id}:${card.title}`);
 }
 
 function formatVol(v: number): string {
@@ -116,9 +294,10 @@ type MarketCard = {
   link: string; image: string;
   marketType: "binary" | "categorical";
   endDate?: string;
+  imageQueries?: string[];
 };
 
-async function buildCard(event: any, markets: any[]): Promise<MarketCard> {
+function buildCard(event: any, markets: any[]): MarketCard {
   const rawCat = event.category ?? "World";
   const catKey = CAT_TO_KEY[rawCat] ?? "trending";
   const category = CAT_LABEL[rawCat] ?? rawCat;
@@ -156,9 +335,7 @@ async function buildCard(event: any, markets: any[]): Promise<MarketCard> {
     }
   }
 
-  const wq = wikiQuery(event.title);
-  const wikiImg = await getWikiImage(wq);
-  const fallback = CAT_FALLBACK[catKey] ?? CAT_FALLBACK.trending;
+  const imageQueries = marketImageQueries(event.title, category, outcomes);
 
   return {
     id: event.event_ticker, catKey, category,
@@ -168,9 +345,10 @@ async function buildCard(event: any, markets: any[]): Promise<MarketCard> {
     outcomes,
     volume: formatVol(totalVol), volumeRaw: totalVol, volume24h: vol24h, openInterest: openInt,
     link: `https://kalshi.com/events/${event.event_ticker}`,
-    image: wikiImg ?? fallback,
+    image: fallbackImage(catKey, `${event.event_ticker}:${event.title}`),
     marketType: isBinary ? "binary" : "categorical",
     endDate: event.close_time ?? event.expiration_time ?? "",
+    imageQueries,
   };
 }
 
@@ -219,14 +397,12 @@ export async function GET(req: NextRequest) {
         ? events
         : events.filter((ev) => (CAT_TO_KEY[ev.category ?? "World"] ?? "trending") === category);
 
-      // Build cards synchronously since markets are already nested inline
-      const results = await Promise.all(
-        matching.map(async (ev) => {
-          const mkts = ev.markets ?? []; // provided by with_nested_markets
-          if (mkts.length === 0) return null;
-          return buildCard(ev, mkts);
-        })
-      );
+      // Build cheap cards first; expensive image lookup happens only after pagination.
+      const results = matching.map((ev) => {
+        const mkts = ev.markets ?? []; // provided by with_nested_markets
+        if (mkts.length === 0) return null;
+        return buildCard(ev, mkts);
+      });
 
       for (const card of results) {
         if (card) collected.push(card);
@@ -274,14 +450,20 @@ export async function GET(req: NextRequest) {
       collected = collected.slice(0, PAGE_SIZE);
     }
 
-    const markets = collected;
+    const markets = await Promise.all(
+      collected.map(async (card) => {
+        const image = await resolveMarketImage(card);
+        const { imageQueries, ...publicCard } = { ...card, image };
+        return publicCard;
+      })
+    );
 
     // Log for debugging
     console.log(`[kalshi-markets] category=${category} returned=${markets.length} hasMore=${hasMore}`);
 
     return NextResponse.json({
       markets,
-      cursor: hasMore ? nextCursor : "",
+      cursor: hasMore ? returnCursor : "",
       hasMore,
       count: markets.length,
       source: "live",
