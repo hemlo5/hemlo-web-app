@@ -420,17 +420,20 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   .sidebar-top-nav {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: center;
     position: fixed !important;
     top: auto !important;
     right: auto !important;
     bottom: calc(10px + env(safe-area-inset-bottom));
     left: 50% !important;
-    width: min(calc(100vw - 28px), 360px);
+    width: min(calc(100vw - 20px), 420px);
     height: 66px;
     padding: 8px;
     transform: translateX(-50%) !important;
     gap: 8px;
-    justify-content: center;
+    justify-content: stretch;
     border: 1px solid rgba(255,255,255,0.12);
     border-radius: 22px;
     background: rgba(21,25,29,0.96);
@@ -451,14 +454,17 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   .nav-center-items {
-    flex: 1 1 auto;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    flex: none !important;
+    width: 100%;
     min-width: 0;
-    justify-content: space-between;
     gap: 6px !important;
   }
 
   .bnav-item {
-    flex: 1 1 0;
+    flex: none !important;
+    width: 100%;
     min-width: 0;
     height: 50px;
     padding: 6px 4px;
@@ -482,15 +488,16 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   .nav-settings-btn {
-    position: fixed !important;
-    top: calc(10px + env(safe-area-inset-top));
-    left: 12px;
-    z-index: 230;
-    width: 42px;
-    height: 42px;
-    flex: 0 0 42px;
-    background: rgba(21,25,29,0.92);
-    box-shadow: 0 12px 28px rgba(0,0,0,0.32);
+    position: relative !important;
+    inset: auto !important;
+    justify-self: end;
+    margin-left: 0;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.07);
+    box-shadow: none;
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
   }
