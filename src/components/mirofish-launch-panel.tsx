@@ -177,6 +177,9 @@ export function MirofishLaunchPanel({
   const timerRef = useRef<any>(null);
   const esRef = useRef<EventSource | null>(null);
   const completingRef = useRef(false);
+  const cancelRequestedRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const currentSimIdRef = useRef<string | null>(null);
   const logsRef = useRef<HTMLDivElement | null>(null);
   const graphNodesAccRef = useRef<any[]>([]);
   const graphEdgesAccRef = useRef<any[]>([]);
@@ -199,10 +202,18 @@ export function MirofishLaunchPanel({
     graphEdgesAccRef.current = [];
     seedRef.current = "";
     completingRef.current = false;
+    cancelRequestedRef.current = false;
+    currentSimIdRef.current = null;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    esRef.current?.close();
+    esRef.current = null;
   }, [market]);
 
   useEffect(() => {
     return () => {
+      cancelRequestedRef.current = true;
+      abortRef.current?.abort();
       esRef.current?.close();
       if (timerRef.current) clearInterval(timerRef.current);
     };
@@ -263,12 +274,13 @@ export function MirofishLaunchPanel({
     });
   };
 
-  const handleGenerateSeed = async (scenario: string, onStep?: (msg: string) => void) => {
+  const handleGenerateSeed = async (scenario: string, onStep?: (msg: string) => void, signal?: AbortSignal) => {
     onStep?.("Optimizing search query...");
     const res = await fetch("/api/generate-seed", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scenario }),
+      signal,
     });
     const data = await res.json();
     if (!res.ok || !data.seed) throw new Error(data.error || "Failed to generate reality seed.");
@@ -280,10 +292,58 @@ export function MirofishLaunchPanel({
     return data.seed as string;
   };
 
+  const cancelSimulation = async (closePanel = false) => {
+    if (phase !== "launching" && phase !== "running") {
+      if (closePanel) onClose();
+      return;
+    }
+
+    cancelRequestedRef.current = true;
+    completingRef.current = true;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    esRef.current?.close();
+    esRef.current = null;
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    const simId = currentSimIdRef.current;
+    addLog("Simulation cancelled by user.");
+    setLaunchError(null);
+    setLaunchStep("Cancelled");
+    setPhase("idle");
+    setElapsed(0);
+    setLiveGraphEvent(null);
+
+    if (simId) {
+      await fetch("/api/custom-simulations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: simId,
+          status: "cancelled",
+          runtime_seconds: elapsed,
+          completed_at: new Date().toISOString(),
+        }),
+      }).catch(() => {});
+    }
+
+    currentSimIdRef.current = null;
+    completingRef.current = false;
+    if (closePanel) onClose();
+  };
+
   const startSimulation = async () => {
     if (!normalizedMarket) return;
     const scenario = normalizedMarket.question || normalizedMarket.topic || normalizedMarket.title || "";
     if (!scenario) return;
+
+    cancelRequestedRef.current = false;
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
 
     setPhase("launching");
     setLaunchError(null);
@@ -340,7 +400,8 @@ export function MirofishLaunchPanel({
     try {
       setLaunchStep("Generating grounded reality seed...");
       markPipelineStep("seed");
-      const generatedSeed = await handleGenerateSeed(scenario, (msg) => setLaunchStep(msg));
+      const generatedSeed = await handleGenerateSeed(scenario, (msg) => setLaunchStep(msg), signal);
+      if (cancelRequestedRef.current || signal.aborted) return;
       completePipelineThrough("seed");
       simulationSeed = appendMarketOutcomesToSeed(generatedSeed, activeOutcomes);
       seedRef.current = simulationSeed;
@@ -359,6 +420,7 @@ export function MirofishLaunchPanel({
       const dbRes = await fetch("/api/custom-simulations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal,
         body: JSON.stringify({
           scenario,
           domain: dbDomain,
@@ -376,6 +438,7 @@ export function MirofishLaunchPanel({
       if (!dbRes.ok) throw new Error(dbData.error || "Could not create simulation record.");
       simDbId = dbData.simulation?.id || null;
       if (!simDbId) throw new Error("Could not create simulation in database.");
+      currentSimIdRef.current = simDbId;
     } catch (err: any) {
       setLaunchError(err?.message || "Network error creating simulation.");
       setPhase("error");
@@ -420,6 +483,7 @@ export function MirofishLaunchPanel({
       esRef.current = es;
 
       es.onmessage = (eventMessage) => {
+        if (cancelRequestedRef.current) return;
         try {
           const event = JSON.parse(eventMessage.data);
           if (event.message) addLog(`[modal] ${event.message}`);
@@ -512,11 +576,13 @@ export function MirofishLaunchPanel({
       };
 
       es.onerror = () => {
+        if (cancelRequestedRef.current) return;
         if (completingRef.current) return;
         es.close();
         void markFailed("Modal stream interrupted. The run was stopped instead of auto-relaunching to prevent duplicate simulations and wasted credits. Please start it again.");
       };
     } catch (err: any) {
+      if (cancelRequestedRef.current || err?.name === "AbortError") return;
       await markFailed(err?.message || String(err));
     }
   };
@@ -579,25 +645,45 @@ export function MirofishLaunchPanel({
                   Simulation Setup
                 </div>
               </div>
-              <button
-                onClick={onClose}
-                disabled={closeDisabled}
-                aria-label="Close simulation panel"
-                style={{
-                  width: 42,
-                  height: 42,
-                  borderRadius: 12,
-                  border: "1px solid #e5e5e5",
-                  background: closeDisabled ? "#f0f0f0" : "#ffffff",
-                  color: closeDisabled ? "#aaa" : "#111",
-                  cursor: closeDisabled ? "not-allowed" : "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <X size={18} />
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {closeDisabled && (
+                  <button
+                    onClick={() => void cancelSimulation(false)}
+                    style={{
+                      height: 42,
+                      padding: "0 16px",
+                      borderRadius: 12,
+                      border: "1px solid #f3b5b5",
+                      background: "#fff3f3",
+                      color: "#9f1d1d",
+                      cursor: "pointer",
+                      fontSize: 13,
+                      fontWeight: 800,
+                    }}
+                  >
+                    Cancel run
+                  </button>
+                )}
+                <button
+                  onClick={onClose}
+                  disabled={closeDisabled}
+                  aria-label="Close simulation panel"
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 12,
+                    border: "1px solid #e5e5e5",
+                    background: closeDisabled ? "#f0f0f0" : "#ffffff",
+                    color: closeDisabled ? "#aaa" : "#111",
+                    cursor: closeDisabled ? "not-allowed" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             <div className="mirofish-launch-grid">
@@ -656,7 +742,25 @@ export function MirofishLaunchPanel({
                         <div style={{ fontSize: 11, color: "#738093", fontWeight: 900, textTransform: "uppercase", letterSpacing: 1.4 }}>Reasoning engine</div>
                         <div style={{ fontSize: 24, fontWeight: 600 }}>Running simulation</div>
                       </div>
-                      <div style={{ fontSize: 18, fontWeight: 600 }}>{formatSecs(elapsed)}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ fontSize: 18, fontWeight: 600 }}>{formatSecs(elapsed)}</div>
+                        <button
+                          onClick={() => void cancelSimulation(false)}
+                          style={{
+                            height: 36,
+                            padding: "0 13px",
+                            borderRadius: 10,
+                            border: "1px solid rgba(248,113,113,0.45)",
+                            background: "rgba(248,113,113,0.12)",
+                            color: "#fecaca",
+                            cursor: "pointer",
+                            fontSize: 12,
+                            fontWeight: 800,
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 18 }}>
                       {["Seed", "Graph", "Agents", "Rounds", "Verdict"].map((step, i) => (
@@ -767,6 +871,25 @@ export function MirofishLaunchPanel({
                       {phase === "launching" ? launchStep : "Run MiroFish Simulation"}
                       {phase !== "launching" && <ArrowRight size={18} />}
                     </button>
+                    {phase === "launching" && (
+                      <button
+                        onClick={() => void cancelSimulation(false)}
+                        style={{
+                          marginTop: 10,
+                          width: "100%",
+                          height: 44,
+                          borderRadius: 12,
+                          border: "1px solid #efc2c2",
+                          background: "#fff7f7",
+                          color: "#9f1d1d",
+                          fontSize: 13,
+                          fontWeight: 800,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Cancel launch
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

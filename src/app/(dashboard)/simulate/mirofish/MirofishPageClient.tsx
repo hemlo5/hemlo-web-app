@@ -227,6 +227,9 @@ function MirofishTerminalContent() {
   // Prevents the persist effect from re-writing sessionStorage AFTER a done/error
   // handler has already cleared it (React state batching race condition).
   const isCompletingRef = useRef(false);
+  const cancelRequestedRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const currentSimIdRef = useRef<string | null>(null);
 
   const SESSION_KEY = "hemlo_running_sim";
 
@@ -262,7 +265,7 @@ function MirofishTerminalContent() {
   
   // ── PERSIST running state to sessionStorage so navigation away doesn't lose it
   useEffect(() => {
-    if (phase === "running" && miroProjectId && !isCompletingRef.current) {
+    if (phase === "running" && miroProjectId && !isCompletingRef.current && !cancelRequestedRef.current) {
       const payload = { phase, elapsed, activeStep, steps, liveLogs, miroProjectId, scenario, domain, seed: seedRef.current || seed, agents, rounds, llmModel, parallelGen, marketOutcomes, marketType };
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
     }
@@ -270,6 +273,15 @@ function MirofishTerminalContent() {
 
   // Keep activeStepRef in sync
   useEffect(() => { activeStepRef.current = activeStep; }, [activeStep]);
+
+  useEffect(() => {
+    return () => {
+      cancelRequestedRef.current = true;
+      abortRef.current?.abort();
+      esRef.current?.close();
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
 
   // ── RESTORE + RECONNECT SSE if simulation was running when user left
   useEffect(() => {
@@ -291,7 +303,7 @@ function MirofishTerminalContent() {
         const res = await fetch("/api/custom-simulations");
         const data = await res.json();
         const existing = (data.simulations || []).find((s: any) => s.id === saved.miroProjectId);
-        if (existing?.status === "completed" || existing?.status === "failed") {
+        if (existing?.status === "completed" || existing?.status === "failed" || existing?.status === "cancelled") {
           sessionStorage.removeItem(SESSION_KEY);
           if (existing.status === "completed") {
             router.push(`/simulate/mirofish/${saved.miroProjectId}`);
@@ -312,6 +324,7 @@ function MirofishTerminalContent() {
       setSteps(saved.steps ?? steps);
       setLiveLogs(saved.liveLogs ?? []);
       setMiroProjectId(saved.miroProjectId);
+      currentSimIdRef.current = saved.miroProjectId;
       if (saved.scenario) setScenario(saved.scenario);
       if (saved.domain) setDomain(saved.domain);
       if (saved.agents) setAgents(saved.agents);
@@ -415,7 +428,7 @@ function MirofishTerminalContent() {
     setScenario(DOMAIN_EXAMPLES[id] || "");
   };
 
-  const handleGenerateSeed = async (scenarioOverride?: string, onStep?: (msg: string) => void): Promise<boolean> => {
+  const handleGenerateSeed = async (scenarioOverride?: string, onStep?: (msg: string) => void, signal?: AbortSignal): Promise<boolean> => {
     const q = scenarioOverride || scenario;
     if (!q) return false;
     setIsGeneratingSeed(true);
@@ -426,7 +439,8 @@ function MirofishTerminalContent() {
       const res = await fetch("/api/generate-seed", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenario: q })
+        body: JSON.stringify({ scenario: q }),
+        signal,
       });
       const data = await res.json();
       console.log("[generate-seed] RAG pipeline result:", {
@@ -481,8 +495,62 @@ function MirofishTerminalContent() {
     setLiveLogs(prev => [...prev.slice(-200), `[${ts}] ${msg}`]);
   }
 
+  const cancelActiveSimulation = async () => {
+    if (phase !== "running" && !isLaunching) return;
+
+    cancelRequestedRef.current = true;
+    isCompletingRef.current = true;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    esRef.current?.close();
+    esRef.current = null;
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    const simId = currentSimIdRef.current || miroProjectId;
+    sessionStorage.removeItem(SESSION_KEY);
+    addLog("Simulation cancelled by user.");
+    setIsLaunching(false);
+    setLaunchError(null);
+    setLaunchStep("Cancelled");
+    setPhase("idle");
+    setEngineStatus("idle");
+    setElapsed(0);
+    setMiroProjectId(null);
+    setSseGraphData(null);
+    setLiveGraphEvent(null);
+    setLiveTimings({});
+    graphNodesAccRef.current = [];
+    graphEdgesAccRef.current = [];
+    setSteps(prev => prev.map(s => ({ ...s, status: "pending", time: "" })));
+
+    if (simId) {
+      await fetch("/api/custom-simulations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: simId,
+          status: "cancelled",
+          runtime_seconds: elapsed,
+          completed_at: new Date().toISOString(),
+        }),
+      }).catch(() => {});
+    }
+
+    currentSimIdRef.current = null;
+    isCompletingRef.current = false;
+  };
+
   const startSimulation = async () => {
     if (!scenario) return;
+
+    cancelRequestedRef.current = false;
+    isCompletingRef.current = false;
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
 
     // ── Step 0: Immediately show the launch overlay so the user knows something is happening
     setIsLaunching(true);
@@ -498,11 +566,13 @@ function MirofishTerminalContent() {
         setLaunchStep("Refreshing session...");
         const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
         if (refreshError || !refreshed.session) {
+          if (cancelRequestedRef.current || signal.aborted) return;
           setLaunchError("Your session has expired. Please sign in again.");
           return;
         }
       }
     } catch (authErr) {
+      if (cancelRequestedRef.current || signal.aborted) return;
       console.error("[mirofish] auth check failed:", authErr);
       setLaunchError("Authentication check failed. Please refresh the page.");
       return;
@@ -510,7 +580,7 @@ function MirofishTerminalContent() {
 
     // ── Step 1.5: Silent pre-flight limit check (overlay stays alive — error shows inside it)
     try {
-      const usageRes = await fetch("/api/usage");
+      const usageRes = await fetch("/api/usage", { signal });
       if (usageRes.ok) {
         const usageData = await usageRes.json();
         if (usageData.usageToday >= usageData.limit) {
@@ -529,13 +599,16 @@ function MirofishTerminalContent() {
       // Ignore — DB save will catch the limit server-side too
     }
 
+    if (cancelRequestedRef.current || signal.aborted) return;
+
     // Step 2: Always generate a grounded reality seed (RAG pipeline)
     {
       setLaunchStep("🔍 Step 1/3 — Generating optimized search query...");
       // Small delay so the user sees the first step message
       await new Promise(r => setTimeout(r, 400));
       setLaunchStep("🌐 Step 2/3 — Deep-searching the internet (Tavily)...");
-      const genSuccess = await handleGenerateSeed(scenario, (msg) => setLaunchStep(msg));
+      const genSuccess = await handleGenerateSeed(scenario, (msg) => setLaunchStep(msg), signal);
+      if (cancelRequestedRef.current || signal.aborted) return;
       if (!genSuccess) {
         setLaunchError(seedError || "Failed to generate reality seed. Please try again.");
         return;
@@ -573,7 +646,8 @@ function MirofishTerminalContent() {
         
       const dbRes = await fetch("/api/custom-simulations", {
         method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ scenario, domain: dbDomain, reality_seed: simulationSeed, agent_count: agents, rounds, llm_model: llmModel, parallel_gen: parallelGen, platforms: ["twitter", "reddit"] })
+        body: JSON.stringify({ scenario, domain: dbDomain, reality_seed: simulationSeed, agent_count: agents, rounds, llm_model: llmModel, parallel_gen: parallelGen, platforms: ["twitter", "reddit"] }),
+        signal,
       });
       const dbData = await dbRes.json();
       if (dbRes.status === 401) {
@@ -593,20 +667,26 @@ function MirofishTerminalContent() {
         return;
       }
       simDbId = dbData.simulation?.id || null;
-      if (simDbId) setMiroProjectId(simDbId);
-    } catch {
+      if (simDbId) {
+        setMiroProjectId(simDbId);
+        currentSimIdRef.current = simDbId;
+      }
+    } catch (err: any) {
+      if (cancelRequestedRef.current || signal.aborted || err?.name === "AbortError") return;
       setLaunchError("Network error creating simulation. Please check your connection.");
       setPhase("idle");
       return;
     }
 
     // ── Step 5: Connect to Modal engine via SSE
+    if (cancelRequestedRef.current || signal.aborted) return;
     setLaunchStep("Connecting to engine...");
     timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
     const startT = Date.now();
     const getT = () => formatSecs(Math.floor((Date.now() - startT)/1000));
 
     const markFailed = async (msg: string) => {
+      if (cancelRequestedRef.current) return;
       addLog(`✗ FAILED: ${msg}`);
       clearInterval(timerRef.current);
       setSteps(prev => prev.map((s, i) => i === activeStep ? {...s, status: "failed"} : s));
@@ -657,8 +737,10 @@ function MirofishTerminalContent() {
       _st['init'] = Date.now();
 
       const es = new EventSource(url.toString());
+      esRef.current = es;
 
       es.onmessage = (e) => {
+        if (cancelRequestedRef.current) return;
         // Dismiss the launch overlay on first SSE message
         setIsLaunching(false);
         try {
@@ -733,6 +815,7 @@ function MirofishTerminalContent() {
             
             const finalize = () => {
               isCompletingRef.current = true;
+              currentSimIdRef.current = null;
               sessionStorage.removeItem(SESSION_KEY);
               router.push(`/simulate/mirofish/${simDbId}`);
             };
@@ -804,6 +887,7 @@ function MirofishTerminalContent() {
       };
 
       es.onerror = () => {
+        if (cancelRequestedRef.current) return;
         setIsLaunching(false);
         if (isCompletingRef.current) return;
         es.close();
@@ -813,6 +897,7 @@ function MirofishTerminalContent() {
       };
 
     } catch (e: any) {
+      if (cancelRequestedRef.current || e?.name === "AbortError") return;
       setIsLaunching(false);
       await markFailed(e?.message || String(e));
     }
@@ -1129,7 +1214,7 @@ function MirofishTerminalContent() {
                 </div>
 
                 <button
-                  onClick={() => { setIsLaunching(false); setPhase("idle"); }}
+                  onClick={() => void cancelActiveSimulation()}
                   style={{
                     position: "absolute", bottom: 32,
                     background: "transparent", border: "none",
@@ -1384,8 +1469,8 @@ function MirofishTerminalContent() {
                     {engineStatus === "queued" ? "Engine in Queue..." : "Simulation Running"}
                     <span style={{ fontSize: 14, color: "#aaa", fontWeight: 500 }}>— {formatSecs(elapsed)}</span>
                   </div>
-                  <button onClick={() => { sessionStorage.removeItem('hemlo_running_sim'); window.location.reload(); }} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.2)", color: "#ccc", padding: "8px 20px", cursor: "pointer", fontSize: 13, fontWeight: 600, borderRadius: 8 }}>
-                    Cancel
+                  <button onClick={() => void cancelActiveSimulation()} style={{ background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.45)", color: "#fecaca", padding: "8px 20px", cursor: "pointer", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>
+                    Cancel run
                   </button>
                 </div>
 

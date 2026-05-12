@@ -225,6 +225,7 @@ function HemloMarketStats({
   const rows = visibleSorted.map(s => s.outcome);
   const rowOriginalIndices = visibleSorted.map(s => s.originalIndex);
   const tableColumns = isCompact ? "minmax(0, 1fr) 62px 62px" : "minmax(0, 1fr) 80px 80px";
+  const shouldFillOutcomeSpace = rows.length > 0 && rows.length < 3;
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: isCompact ? 10 : 12, minHeight: 0 }}>
@@ -248,14 +249,39 @@ function HemloMarketStats({
         <span style={{ textAlign: "right" }}>Hemlo</span>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 0, overflowY: "auto", paddingRight: 2, scrollbarWidth: "none" }}>
+      <div
+        style={{
+          display: "flex",
+          flex: 1,
+          flexDirection: "column",
+          gap: 8,
+          minHeight: 0,
+          overflowY: shouldFillOutcomeSpace ? "hidden" : "auto",
+          paddingRight: 2,
+          scrollbarWidth: "none",
+        }}
+      >
         {rows.map((outcome, visIdx) => {
           const origIdx = rowOriginalIndices[visIdx];
           const marketPct = getOutcomeMarketPercent(outcome, market, origIdx);
           const hemloPct = getOutcomeHemloPercent(outcome, market, origIdx);
           const optionImage = getOutcomeImage(outcome);
           return (
-            <div key={`${outcome.label}-${visIdx}-stats`} style={{ display: "grid", gridTemplateColumns: tableColumns, gap: 10, alignItems: "center", padding: isCompact ? "12px" : "14px 14px", borderRadius: 12, background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.07)" }}>
+            <div
+              key={`${outcome.label}-${visIdx}-stats`}
+              style={{
+                display: "grid",
+                gridTemplateColumns: tableColumns,
+                gap: 10,
+                alignItems: "center",
+                flex: shouldFillOutcomeSpace ? "1 1 0" : "0 0 auto",
+                minHeight: shouldFillOutcomeSpace ? (isCompact ? 82 : 112) : undefined,
+                padding: isCompact ? "12px" : "14px 14px",
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.045)",
+                border: "1px solid rgba(255,255,255,0.07)",
+              }}
+            >
               <div style={{ color: "#e9eef5", fontSize: 14, fontWeight: 700, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                 {optionImage && (
                   <img src={optionImage} alt="" style={{ width: isCompact ? 24 : 28, height: isCompact ? 24 : 28, borderRadius: 7, objectFit: "cover", flexShrink: 0, background: "#202a33" }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
