@@ -183,6 +183,7 @@ export function MirofishLaunchPanel({
   const logsRef = useRef<HTMLDivElement | null>(null);
   const graphNodesAccRef = useRef<any[]>([]);
   const graphEdgesAccRef = useRef<any[]>([]);
+  const liveGraphRootRef = useRef<string>("scenario_root");
 
   useEffect(() => {
     if (!market) return;
@@ -200,6 +201,7 @@ export function MirofishLaunchPanel({
     setLiveGraphEvent(null);
     graphNodesAccRef.current = [];
     graphEdgesAccRef.current = [];
+    liveGraphRootRef.current = "scenario_root";
     seedRef.current = "";
     completingRef.current = false;
     cancelRequestedRef.current = false;
@@ -335,6 +337,78 @@ export function MirofishLaunchPanel({
     if (closePanel) onClose();
   };
 
+  const normalizeGraphNode = (raw: any, fallbackType = "Agent") => {
+    const uuid = String(raw?.uuid || raw?.id || raw?.name || `node_${Date.now()}_${Math.random().toString(16).slice(2)}`);
+    return {
+      uuid,
+      name: String(raw?.name || raw?.label || "Live node"),
+      labels: Array.isArray(raw?.labels) && raw.labels.length ? raw.labels : [raw?.type || fallbackType],
+      summary: String(raw?.summary || raw?.bio || raw?.description || ""),
+      attributes: raw?.attributes || {},
+    };
+  };
+
+  const normalizeGraphEdge = (raw: any, sourceUuid: string, targetUuid: string) => {
+    const source = String(raw?.source_node_uuid || raw?.source || sourceUuid);
+    const target = String(raw?.target_node_uuid || raw?.target || targetUuid);
+    return {
+      uuid: String(raw?.uuid || raw?.id || `live_edge_${source}_${target}`),
+      name: String(raw?.name || raw?.fact_type || "related_to"),
+      fact: String(raw?.fact || raw?.summary || ""),
+      fact_type: String(raw?.fact_type || raw?.name || "related_to"),
+      source_node_uuid: source,
+      target_node_uuid: target,
+      attributes: raw?.attributes || {},
+      episodes: Array.isArray(raw?.episodes) ? raw.episodes : [],
+    };
+  };
+
+  const upsertLiveGraphUpdate = (rawNode: any, rawEdge?: any) => {
+    if (!rawNode) return;
+    const simId = currentSimIdRef.current || "live";
+    const rootUuid = liveGraphRootRef.current === "scenario_root" ? `scenario_${simId}` : liveGraphRootRef.current;
+    liveGraphRootRef.current = rootUuid;
+
+    const rootNode = {
+      uuid: rootUuid,
+      name: "Scenario",
+      labels: ["Scenario"],
+      summary: normalizedMarket?.question || normalizedMarket?.topic || "Live MiroFish simulation",
+      attributes: { source: normalizedMarket?.source || "market" },
+    };
+    const node = normalizeGraphNode(rawNode);
+
+    setSseGraphData((prev) => {
+      const nodes = [...(prev?.nodes?.length ? prev.nodes : graphNodesAccRef.current)];
+      const edges = [...(prev?.edges?.length ? prev.edges : graphEdgesAccRef.current)];
+      const nodeIds = new Set(nodes.map((n) => String(n.uuid || n.id)));
+      const edgeIds = new Set(edges.map((e) => String(e.uuid || e.id)));
+
+      if (!nodeIds.has(rootNode.uuid)) {
+        nodes.unshift(rootNode);
+        nodeIds.add(rootNode.uuid);
+      }
+      if (!nodeIds.has(node.uuid)) {
+        nodes.push(node);
+        nodeIds.add(node.uuid);
+      }
+
+      const edge = rawEdge
+        ? normalizeGraphEdge(rawEdge, rootNode.uuid, node.uuid)
+        : node.uuid !== rootNode.uuid
+          ? normalizeGraphEdge(null, rootNode.uuid, node.uuid)
+          : null;
+
+      if (edge && !edgeIds.has(edge.uuid)) {
+        edges.push(edge);
+      }
+
+      graphNodesAccRef.current = nodes;
+      graphEdgesAccRef.current = edges;
+      return { nodes, edges };
+    });
+  };
+
   const startSimulation = async () => {
     if (!normalizedMarket) return;
     const scenario = normalizedMarket.question || normalizedMarket.topic || normalizedMarket.title || "";
@@ -355,6 +429,7 @@ export function MirofishLaunchPanel({
     setLiveGraphEvent(null);
     graphNodesAccRef.current = [];
     graphEdgesAccRef.current = [];
+    liveGraphRootRef.current = "scenario_root";
     setLaunchStep("Verifying session...");
 
     try {
@@ -399,6 +474,7 @@ export function MirofishLaunchPanel({
 
     try {
       setLaunchStep("Generating grounded reality seed...");
+      addLog("Generating grounded reality seed...");
       markPipelineStep("seed");
       const generatedSeed = await handleGenerateSeed(scenario, (msg) => setLaunchStep(msg), signal);
       if (cancelRequestedRef.current || signal.aborted) return;
@@ -406,6 +482,7 @@ export function MirofishLaunchPanel({
       simulationSeed = appendMarketOutcomesToSeed(generatedSeed, activeOutcomes);
       seedRef.current = simulationSeed;
       setLaunchStep("Creating simulation record...");
+      addLog("Reality seed ready. Creating simulation record...");
     } catch (err: any) {
       setLaunchError(err?.message || "Failed to generate reality seed.");
       setPhase("error");
@@ -505,6 +582,11 @@ export function MirofishLaunchPanel({
 
           if (event.step === "graph_update" && event.data) {
             setLiveGraphEvent(event.data);
+            if (event.data.type === "add_node" && event.data.node) {
+              upsertLiveGraphUpdate(event.data.node);
+            } else if (event.data.type === "add_node_with_edge" && event.data.node) {
+              upsertLiveGraphUpdate(event.data.node, event.data.edge);
+            }
           }
 
           if (event.step === "error") {
@@ -735,12 +817,12 @@ export function MirofishLaunchPanel({
                   )}
                 </motion.div>
 
-                {phase === "running" ? (
-                  <div style={{ background: "#0e1116", color: "#ffffff", border: "1px solid #222a33", borderRadius: 18, padding: 22, flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, marginBottom: 18 }}>
+                {(phase === "launching" || phase === "running") ? (
+                  <div style={{ background: "#0e1116", color: "#ffffff", border: "1px solid #222a33", borderRadius: 18, padding: 22, flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, marginBottom: 16 }}>
                       <div>
-                        <div style={{ fontSize: 11, color: "#738093", fontWeight: 900, textTransform: "uppercase", letterSpacing: 1.4 }}>Reasoning engine</div>
-                        <div style={{ fontSize: 24, fontWeight: 600 }}>Running simulation</div>
+                        <div style={{ fontSize: 11, color: "#738093", fontWeight: 900, textTransform: "uppercase", letterSpacing: 1.4 }}>Pipeline progress</div>
+                        <div style={{ fontSize: 22, fontWeight: 600 }}>{phase === "launching" ? "Preparing run" : "Running simulation"}</div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <div style={{ fontSize: 18, fontWeight: 600 }}>{formatSecs(elapsed)}</div>
@@ -762,14 +844,36 @@ export function MirofishLaunchPanel({
                         </button>
                       </div>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 18 }}>
-                      {["Seed", "Graph", "Agents", "Rounds", "Verdict"].map((step, i) => (
-                        <div key={step} style={{ height: 8, borderRadius: 999, background: i === 0 || logs.length > i * 3 ? "#ffffff" : "rgba(255,255,255,0.13)" }} />
-                      ))}
-                    </div>
-                    <div style={{ color: "#aab4c0", fontSize: 13, fontWeight: 600, marginBottom: 12 }}>{launchStep}</div>
-                    <div ref={logsRef} style={{ flex: 1, minHeight: 260, overflowY: "auto", background: "#07090d", border: "1px solid #1d2530", borderRadius: 12, padding: 14, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, lineHeight: 1.55, color: "#d6deea" }}>
-                      {logs.map((line, i) => <div key={`${line}-${i}`}>{line}</div>)}
+                    <div style={{ color: "#aab4c0", fontSize: 13, fontWeight: 600, marginBottom: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{launchStep}</div>
+                    <div style={{ display: "grid", gridTemplateColumns: `repeat(${PIPELINE_STEPS.length}, minmax(96px, 1fr))`, gap: 8, overflowX: "auto", scrollbarWidth: "none" }}>
+                      {PIPELINE_STEPS.map((step, index) => {
+                        const done = completedPipelineSteps.includes(step.key);
+                        const active = activePipelineStep === step.key && !done;
+                        return (
+                          <div
+                            key={step.key}
+                            style={{
+                              minHeight: 74,
+                              borderRadius: 14,
+                              border: `1px solid ${done ? "rgba(34,197,94,0.42)" : active ? "rgba(255,255,255,0.42)" : "#25303a"}`,
+                              background: done ? "rgba(34,197,94,0.12)" : active ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.035)",
+                              padding: "12px 10px",
+                              display: "flex",
+                              flexDirection: "column",
+                              justifyContent: "space-between",
+                              gap: 8,
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                              <span style={{ color: done ? "#86efac" : active ? "#ffffff" : "#718093", fontSize: 11, fontWeight: 900 }}>{String(index + 1).padStart(2, "0")}</span>
+                              {done ? <Check size={14} color="#86efac" /> : active ? <Loader2 size={14} className="animate-spin" color="#ffffff" /> : null}
+                            </div>
+                            <div style={{ color: done || active ? "#ffffff" : "#748293", fontSize: 12, fontWeight: 800, lineHeight: 1.15 }}>
+                              {step.label}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (
@@ -786,7 +890,7 @@ export function MirofishLaunchPanel({
                         return (
                           <button
                             key={opt.id}
-                            disabled={opt.locked || phase === "launching"}
+                            disabled={opt.locked}
                             onClick={() => handleMode(opt.id as any, opt.agents, opt.rounds)}
                             style={{
                               padding: 16,
@@ -849,47 +953,28 @@ export function MirofishLaunchPanel({
 
                     <button
                       onClick={startSimulation}
-                      disabled={phase === "launching"}
+                      disabled={false}
                       style={{
                         marginTop: 18,
                         width: "100%",
                         height: 54,
                         borderRadius: 12,
                         border: "none",
-                        background: phase === "launching" ? "#d8d8d8" : "#000000",
+                        background: "#000000",
                         color: "#ffffff",
                         fontSize: 15,
                         fontWeight: 600,
-                        cursor: phase === "launching" ? "default" : "pointer",
+                        cursor: "pointer",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
                         gap: 10,
                       }}
                     >
-                      {phase === "launching" ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}
-                      {phase === "launching" ? launchStep : "Run MiroFish Simulation"}
-                      {phase !== "launching" && <ArrowRight size={18} />}
+                      <Zap size={18} />
+                      Run MiroFish Simulation
+                      <ArrowRight size={18} />
                     </button>
-                    {phase === "launching" && (
-                      <button
-                        onClick={() => void cancelSimulation(false)}
-                        style={{
-                          marginTop: 10,
-                          width: "100%",
-                          height: 44,
-                          borderRadius: 12,
-                          border: "1px solid #efc2c2",
-                          background: "#fff7f7",
-                          color: "#9f1d1d",
-                          fontSize: 13,
-                          fontWeight: 800,
-                          cursor: "pointer",
-                        }}
-                      >
-                        Cancel launch
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
@@ -915,47 +1000,44 @@ export function MirofishLaunchPanel({
               >
                 {(phase === "launching" || phase === "running") ? (
                   <>
-                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, marginBottom: 18, flexShrink: 0 }}>
-                      <div style={{ color: "#748293", fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1.4 }}>
-                        Pipeline roadmap
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 14, flexShrink: 0 }}>
+                      <div>
+                        <div style={{ color: "#748293", fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1.4, marginBottom: 5 }}>
+                          Live output stream
+                        </div>
+                        <div style={{ color: "#ffffff", fontSize: 22, fontWeight: 600, lineHeight: 1 }}>Reasoning logs</div>
                       </div>
-                      <div style={{ color: "#ffffff", fontSize: 13, fontWeight: 600 }}>{formatSecs(elapsed)}</div>
+                      <div style={{ color: "#ffffff", fontSize: 13, fontWeight: 700, padding: "7px 10px", borderRadius: 999, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                        {formatSecs(elapsed)}
+                      </div>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 0, flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 2, position: "relative" }}>
-                      <div style={{ position: "absolute", left: 15, top: 4, bottom: 12, width: 1, background: "rgba(255,255,255,0.08)" }} />
-                      {PIPELINE_STEPS.map((step, index) => {
-                        const done = completedPipelineSteps.includes(step.key);
-                        const active = activePipelineStep === step.key && !done;
-                        return (
-                          <div key={step.key} style={{ display: "grid", gridTemplateColumns: "32px minmax(0,1fr)", gap: 14, paddingBottom: index === PIPELINE_STEPS.length - 1 ? 0 : 22, position: "relative", zIndex: 1 }}>
-                            <div
-                              style={{
-                                width: 32,
-                                height: 32,
-                                borderRadius: "50%",
-                                background: done ? "#22c55e" : active ? "#ffffff" : "#0a0d12",
-                                border: `1px solid ${done ? "#22c55e" : active ? "#ffffff" : "#26313b"}`,
-                                color: done || active ? "#000000" : "#566170",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: 10,
-                                fontWeight: 900,
-                              }}
-                            >
-                              {done ? <Check size={14} /> : active ? <Loader2 size={14} className="animate-spin" /> : `0${index + 1}`}
-                            </div>
-                            <div style={{ paddingTop: 3, minWidth: 0 }}>
-                              <div style={{ color: done || active ? "#ffffff" : "#667487", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-                                {step.label}
-                              </div>
-                              <div style={{ color: done ? "#74d99a" : active ? "#aab4c0" : "#4f5b6a", fontSize: 12, lineHeight: 1.35, fontWeight: 600 }}>
-                                {active ? launchStep : step.sub}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div style={{ color: "#9aa7b8", fontSize: 12, fontWeight: 700, marginBottom: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>
+                      {launchStep}
+                    </div>
+                    <div
+                      ref={logsRef}
+                      style={{
+                        flex: 1,
+                        minHeight: 0,
+                        overflowY: "auto",
+                        background: "#07090d",
+                        border: "1px solid #1d2530",
+                        borderRadius: 14,
+                        padding: 14,
+                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+                        fontSize: 12,
+                        lineHeight: 1.55,
+                        color: "#d6deea",
+                        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+                      }}
+                    >
+                      {logs.length ? logs.map((line, i) => (
+                        <div key={`${line}-${i}`} style={{ paddingBottom: 4, wordBreak: "break-word" }}>
+                          {line}
+                        </div>
+                      )) : (
+                        <div style={{ color: "#6b7788" }}>Waiting for Modal logs...</div>
+                      )}
                     </div>
                   </>
                 ) : (

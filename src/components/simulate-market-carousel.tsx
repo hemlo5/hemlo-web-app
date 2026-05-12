@@ -278,17 +278,18 @@ function HemloMarketStats({
                 minHeight: shouldFillOutcomeSpace ? (isCompact ? 82 : 112) : undefined,
                 padding: isCompact ? "12px" : "14px 14px",
                 borderRadius: 12,
-                background: "rgba(255,255,255,0.045)",
-                border: "1px solid rgba(255,255,255,0.07)",
+                background: "#ffffff",
+                border: "1px solid #e6e8ec",
+                boxShadow: "0 8px 22px rgba(0,0,0,0.12)",
               }}
             >
-              <div style={{ color: "#e9eef5", fontSize: 14, fontWeight: 700, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <div style={{ color: "#050505", fontSize: 14, fontWeight: 700, lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                 {optionImage && (
-                  <img src={optionImage} alt="" style={{ width: isCompact ? 24 : 28, height: isCompact ? 24 : 28, borderRadius: 7, objectFit: "cover", flexShrink: 0, background: "#202a33" }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                  <img src={optionImage} alt="" style={{ width: isCompact ? 24 : 28, height: isCompact ? 24 : 28, borderRadius: 7, objectFit: "cover", flexShrink: 0, background: "#eef1f5" }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
                 )}
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{outcome.label}</span>
               </div>
-              <div style={{ textAlign: "right", color: "#dbe7f5", fontSize: isCompact ? 15 : 17, fontWeight: 700 }}>
+              <div style={{ textAlign: "right", color: "#050505", fontSize: isCompact ? 15 : 17, fontWeight: 700 }}>
                 {marketPct}%
               </div>
               <div style={{ textAlign: "right", color: hemloPct === null ? "#627084" : "#38e88d", fontSize: isCompact ? 15 : 17, fontWeight: 700 }}>
@@ -524,11 +525,13 @@ export function SimulateMarketCarousel({
                 width: "100%",
                 height: isCompact ? "100%" : 431,
                 maxWidth: 930,
-                background: "#181d21",
-                border: "1px solid #25303a",
+                background: "#ffffff",
+                border: "1px solid #ffffff",
                 borderRadius: 16,
+                padding: isCompact ? 10 : 12,
                 overflow: "hidden",
-                boxShadow: "0 18px 60px rgba(0,0,0,0.45)",
+                boxSizing: "border-box",
+                boxShadow: "0 18px 60px rgba(0,0,0,0.42)",
                 color: "#ffffff",
               }}
             >
@@ -538,18 +541,20 @@ export function SimulateMarketCarousel({
                   gridTemplateColumns: isCompact ? "1fr" : "minmax(260px, 40%) minmax(0, 1fr)",
                   height: "100%",
                   minHeight: 0,
+                  gap: isCompact ? 10 : 12,
+                  background: "transparent",
                 }}
               >
-                <div style={{ padding: isCompact ? "20px" : "20px 20px 16px", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, overflow: "hidden" }}>
+                <div style={{ padding: isCompact ? "20px" : "20px 20px 16px", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, overflow: "hidden", background: "#ffffff", borderRadius: 10 }}>
                   <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 12 }}>
-                    <div style={{ width: 56, height: 56, minWidth: 56, borderRadius: 8, overflow: "hidden", background: "#202a33", flexShrink: 0 }}>
+                    <div style={{ width: 56, height: 56, minWidth: 56, borderRadius: 8, overflow: "hidden", background: "#eef1f5", flexShrink: 0 }}>
                       <img src={market.icon || market.image || "/polymarket.webp"} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     </div>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#768493", lineHeight: 1.2, marginBottom: 4 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#647386", lineHeight: 1.2, marginBottom: 4 }}>
                         {market.category || sourceLabel(market.source)}
                       </div>
-                      <div style={{ fontSize: isCompact ? 20 : 24, fontWeight: 600, color: "#f6f8fb", lineHeight: 1.12, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                      <div style={{ fontSize: isCompact ? 20 : 24, fontWeight: 600, color: "#050505", lineHeight: 1.12, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                         {market.topic}
                       </div>
                     </div>
@@ -557,7 +562,7 @@ export function SimulateMarketCarousel({
 
                   {/* Polymarket price chart */}
                   {!isCompact && (
-                    <div style={{ flex: 1, minHeight: 0, borderRadius: 10, overflow: "hidden", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", marginTop: 4 }}>
+                    <div style={{ flex: 1, minHeight: 0, borderRadius: 10, overflow: "hidden", background: "#f4f6f8", border: "1px solid #e2e7ee", marginTop: 4 }}>
                       <MiniPriceChart tokenId={topOutcome.tokenId || topOutcome.clobTokenId} />
                     </div>
                   )}
@@ -572,13 +577,13 @@ export function SimulateMarketCarousel({
                     {market.resultHref ? (
                       <Link href={market.resultHref} style={{ textDecoration: "none" }}>
                         <motion.div
-                          whileHover={{ y: -1, boxShadow: "0 10px 28px rgba(255,255,255,0.18)" }}
+                          whileHover={{ y: -1, boxShadow: "0 10px 28px rgba(0,0,0,0.22)" }}
                           whileTap={{ scale: 0.97 }}
                           style={{
                             height: 48,
                             borderRadius: 8,
-                            background: "#ffffff",
-                            color: "#000000",
+                            background: "#050505",
+                            color: "#ffffff",
                             border: "none",
                             fontSize: 15,
                             fontWeight: 600,
@@ -587,7 +592,7 @@ export function SimulateMarketCarousel({
                             justifyContent: "center",
                             alignItems: "center",
                             gap: 10,
-                            boxShadow: "0 4px 16px rgba(255,255,255,0.1)",
+                            boxShadow: "0 4px 16px rgba(0,0,0,0.16)",
                           }}
                         >
                           <img src="/hemlo-icon.svg" alt="Hemlo" style={{ width: 20, height: 20, objectFit: "contain" }} />
@@ -596,14 +601,14 @@ export function SimulateMarketCarousel({
                       </Link>
                     ) : (
                       <motion.button
-                        whileHover={{ y: -1, boxShadow: "0 10px 28px rgba(255,255,255,0.18)" }}
+                        whileHover={{ y: -1, boxShadow: "0 10px 28px rgba(0,0,0,0.22)" }}
                         whileTap={{ scale: 0.97 }}
                         onClick={() => onMarketSelect(market)}
                         style={{
                           height: 48,
                           borderRadius: 8,
-                          background: "#ffffff",
-                          color: "#000000",
+                          background: "#050505",
+                          color: "#ffffff",
                           border: "none",
                           fontSize: 15,
                           fontWeight: 600,
@@ -612,7 +617,7 @@ export function SimulateMarketCarousel({
                           justifyContent: "center",
                           alignItems: "center",
                           gap: 10,
-                          boxShadow: "0 4px 16px rgba(255,255,255,0.1)",
+                          boxShadow: "0 4px 16px rgba(0,0,0,0.16)",
                         }}
                       >
                         <img src="/hemlo-icon.svg" alt="Hemlo" style={{ width: 20, height: 20, objectFit: "contain" }} />
@@ -622,13 +627,13 @@ export function SimulateMarketCarousel({
                   </div>
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: "transparent", padding: isCompact ? "16px 20px 16px" : "20px 20px 16px 24px", borderLeft: isCompact ? "none" : "1px solid #25303a", borderTop: isCompact ? "1px solid #25303a" : "none", position: "relative", minWidth: 0, overflow: "hidden", minHeight: 0 }}>
+                <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", background: "#050505", padding: isCompact ? "16px 20px 16px" : "20px 20px 16px 24px", borderRadius: 10, position: "relative", minWidth: 0, overflow: "hidden", minHeight: 0 }}>
                   <HemloMarketStats market={market} outcomes={allOutcomes.length ? allOutcomes : [topOutcome]} isCompact={isCompact} />
                 </div>
               </div>
             </motion.div>
           ) : (
-            <div style={{ height: "100%", width: "100%", maxWidth: 1180, borderRadius: 16, border: "1px solid #25303a", background: "#181d21", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a94a6", fontWeight: 600 }}>
+            <div style={{ height: "100%", width: "100%", maxWidth: 1180, borderRadius: 16, border: "1px solid #151a20", background: "#050505", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a94a6", fontWeight: 600 }}>
               {loading ? "Loading simulated markets..." : "No simulated markets available"}
             </div>
           )}

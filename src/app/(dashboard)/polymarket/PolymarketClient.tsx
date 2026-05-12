@@ -590,15 +590,17 @@ export default function PolymarketClient({ initialMarkets = [], initialStats = n
                 transition={{ duration: 0.3 }}
                 style={{
                   width: "100%",
-                  height: isMobile ? 420 : undefined,
+                  height: isMobile ? 420 : 431,
                   maxWidth: 930,
-                  background: "#181d21",
-                  border: "1px solid #25303a",
+                  background: "#ffffff",
+                  border: "1px solid #ffffff",
                   borderRadius: 16,
+                  padding: isMobile ? 10 : 12,
                   display: "flex",
                   flexDirection: "column",
                   overflow: "hidden",
-                  boxShadow: "0 18px 60px rgba(0,0,0,0.45)",
+                  boxSizing: "border-box",
+                  boxShadow: "0 18px 60px rgba(0,0,0,0.42)",
                   position: "relative",
                   color: "#ffffff",
                 }}
@@ -620,28 +622,28 @@ export default function PolymarketClient({ initialMarkets = [], initialStats = n
                   const chartColors = ["#7db7ff", "#2d9cff", "#facc15", "#fb8c23"];
 
                   return (
-                    <div className="home-carousel-card" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(260px, 40%) minmax(0, 1fr)", gridTemplateRows: isMobile ? "auto minmax(0, 1fr)" : undefined, width: "100%", height: isMobile ? "100%" : 431, minHeight: 0 }}>
+                    <div className="home-carousel-card" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(260px, 40%) minmax(0, 1fr)", gridTemplateRows: isMobile ? "auto minmax(0, 1fr)" : undefined, width: "100%", height: "100%", minHeight: 0, gap: isMobile ? 10 : 12, background: "transparent" }}>
                       
                       {/* ── LEFT SIDE: Info + Chart + CTA ── */}
-                      <div className="home-carousel-left" style={{ padding: isMobile ? "20px" : "20px 20px 16px", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, overflow: "hidden", borderBottom: isMobile ? "1px solid #25303a" : "none" }}>
+                      <div className="home-carousel-left" style={{ padding: isMobile ? "20px" : "20px 20px 16px", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, overflow: "hidden", background: "#ffffff", borderRadius: 10 }}>
                         
                         {/* Header: Logo + Title */}
                         <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 12 }}>
-                          <div style={{ width: 56, height: 56, minWidth: 56, borderRadius: 8, overflow: "hidden", background: "#202a33", flexShrink: 0 }}>
+                          <div style={{ width: 56, height: 56, minWidth: 56, borderRadius: 8, overflow: "hidden", background: "#eef1f5", flexShrink: 0 }}>
                             <img src={t.icon || t.image || "/polymarket.webp"} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           </div>
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: "#768493", lineHeight: 1.2, marginBottom: 4 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: "#647386", lineHeight: 1.2, marginBottom: 4 }}>
                               {t.category || "Polymarket"}
                             </div>
-                            <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: 600, color: "#f6f8fb", lineHeight: 1.12, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                            <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: 600, color: "#050505", lineHeight: 1.12, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                               {t.topic}
                             </div>
                           </div>
                         </div>
                         
                         {/* Polymarket price chart */}
-                        <div style={{ display: isMobile ? "none" : "block", flex: 1, minHeight: 0, borderRadius: 10, overflow: "hidden", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", marginTop: 4 }}>
+                        <div style={{ display: isMobile ? "none" : "block", flex: 1, minHeight: 0, borderRadius: 10, overflow: "hidden", background: "#f4f6f8", border: "1px solid #e2e7ee", marginTop: 4 }}>
                           <RealPolymarketChart t={t} isActive={true} />
                         </div>
 
@@ -655,14 +657,14 @@ export default function PolymarketClient({ initialMarkets = [], initialStats = n
                             <motion.button
                               type="button"
                               onClick={() => setLaunchMarket(buildLaunchMarket(t, "polymarket"))}
-                              whileHover={{ y: -1, boxShadow: "0 10px 28px rgba(255,255,255,0.18)" }}
+                              whileHover={{ y: -1, boxShadow: "0 10px 28px rgba(0,0,0,0.22)" }}
                               whileTap={{ scale: 0.97 }}
                               style={{
                                 width: "100%",
                                 height: 48,
                                 borderRadius: 8,
-                                background: "#ffffff",
-                                color: "#000000",
+                                background: "#050505",
+                                color: "#ffffff",
                                 fontSize: 15,
                                 fontWeight: 600,
                                 cursor: "pointer",
@@ -670,7 +672,7 @@ export default function PolymarketClient({ initialMarkets = [], initialStats = n
                                 justifyContent: "center",
                                 alignItems: "center",
                                 gap: 10,
-                                boxShadow: "0 4px 16px rgba(255,255,255,0.1)",
+                                boxShadow: "0 4px 16px rgba(0,0,0,0.16)",
                                 border: "none",
                               }}
                             >
@@ -681,7 +683,7 @@ export default function PolymarketClient({ initialMarkets = [], initialStats = n
                       </div>
                       
                       {/* ── RIGHT SIDE: Outcomes only ── */}
-                      <div className="home-carousel-right" style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", alignSelf: "stretch", boxSizing: "border-box", background: "transparent", padding: isMobile ? "16px 20px 16px" : "24px 28px 18px", borderLeft: isMobile ? "none" : "1px solid #25303a", borderTop: isMobile ? "1px solid #25303a" : "none", minWidth: 0, overflow: "hidden", minHeight: 0 }}>
+                      <div className="home-carousel-right" style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", alignSelf: "stretch", boxSizing: "border-box", background: "#050505", padding: isMobile ? "16px 20px 16px" : "24px 28px 18px", borderRadius: 10, minWidth: 0, overflow: "hidden", minHeight: 0 }}>
                         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, marginBottom: 18 }}>
                           <div>
                             <div style={{ color: "#768493", fontSize: 11, fontWeight: 900, letterSpacing: 1.3, textTransform: "uppercase", marginBottom: 5 }}>Market outcomes</div>
@@ -696,21 +698,21 @@ export default function PolymarketClient({ initialMarkets = [], initialStats = n
                             const optionImage = getOutcomeImage(o);
                             const color = chartColors[oi % chartColors.length];
                             return (
-                              <div key={`${o.label}-${oi}`} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 74px", gap: 14, alignItems: "center", padding: "14px 16px", borderRadius: 12, background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.07)", minHeight: 72, flexShrink: 0 }}>
+                              <div key={`${o.label}-${oi}`} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 74px", gap: 14, alignItems: "center", padding: "14px 16px", borderRadius: 12, background: "#ffffff", border: "1px solid #e6e8ec", boxShadow: "0 8px 22px rgba(0,0,0,0.12)", minHeight: 72, flexShrink: 0 }}>
                                 <div style={{ minWidth: 0 }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 9, minWidth: 0 }}>
                                     {optionImage ? (
-                                      <img src={optionImage} alt="" style={{ width: 28, height: 28, borderRadius: 7, objectFit: "cover", background: "#202a33", flexShrink: 0 }} onError={(e) => { e.currentTarget.style.display = "none" }} />
+                                      <img src={optionImage} alt="" style={{ width: 28, height: 28, borderRadius: 7, objectFit: "cover", background: "#eef1f5", flexShrink: 0 }} onError={(e) => { e.currentTarget.style.display = "none" }} />
                                     ) : (
                                       <span style={{ width: 10, height: 10, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0 }} />
                                     )}
-                                    <span style={{ color: "#e9eef5", fontSize: 15, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.label}</span>
+                                    <span style={{ color: "#050505", fontSize: 15, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.label}</span>
                                   </div>
-                                  <div style={{ height: 5, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                                  <div style={{ height: 5, borderRadius: 999, background: "#e8edf2", overflow: "hidden" }}>
                                     <div style={{ height: "100%", width: `${Math.max(prob, 1)}%`, borderRadius: 999, background: color }} />
                                   </div>
                                 </div>
-                                <div style={{ textAlign: "right", color: "#f6f8fb", fontSize: 24, fontWeight: 900 }}>{prob}%</div>
+                                <div style={{ textAlign: "right", color: "#050505", fontSize: 24, fontWeight: 900 }}>{prob}%</div>
                               </div>
                             );
                           })}
