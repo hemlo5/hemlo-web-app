@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import type { TrendingTopic } from "./types"
+import { cachedJson, readClientCache } from "./client-cache"
 
 const REFRESH_INTERVAL = 30 * 60 * 1000 // 30 minutes
 
@@ -13,11 +14,16 @@ export function useTrendingTopics() {
 
   const fetch_ = useCallback(async () => {
     try {
-      setLoading(true)
+      const cached = readClientCache<{ topics?: TrendingTopic[] }>("/api/trending")
+      if (cached) {
+        setTopics(cached.topics ?? [])
+        setLastUpdated(new Date())
+        setLoading(false)
+      } else {
+        setLoading(true)
+      }
       setError(null)
-      const res = await fetch("/api/trending", { cache: "no-store" })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
+      const data = await cachedJson<{ topics?: TrendingTopic[] }>("/api/trending", { ttlMs: REFRESH_INTERVAL })
       setTopics(data.topics ?? [])
       setLastUpdated(new Date())
     } catch (err: any) {

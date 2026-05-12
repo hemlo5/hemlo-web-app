@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Loader2, TrendingUp } from "lucide-react";
+import { cachedJson, readClientCache } from "@/lib/client-cache";
 
 type HotSimulation = {
   id?: string;
@@ -28,8 +29,13 @@ export function HotSimulationsRail({ limit = 5 }: { limit?: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/simulations-completed")
-      .then((r) => r.json())
+    const endpoint = "/api/simulations-completed";
+    const cached = readClientCache<any>(endpoint);
+    if (cached) {
+      setItems(Array.isArray(cached.data) ? cached.data.slice(0, limit) : []);
+      setLoading(false);
+    }
+    cachedJson<any>(endpoint, { ttlMs: 45_000 })
       .then((data) => {
         if (!cancelled) setItems(Array.isArray(data.data) ? data.data.slice(0, limit) : []);
       })
@@ -45,7 +51,7 @@ export function HotSimulationsRail({ limit = 5 }: { limit?: number }) {
   }, [limit]);
 
   return (
-    <div className="hide-mobile" style={{ width: 380, height: 460, display: "flex", flexDirection: "column", overflow: "hidden", background: "transparent" }}>
+    <div className="hide-mobile" style={{ width: 380, height: 431, display: "flex", flexDirection: "column", overflow: "hidden", background: "transparent" }}>
       <div style={{ padding: "0 0 14px", display: "flex", alignItems: "center", gap: 6 }}>
         <span style={{ fontSize: 18, fontWeight: 800, color: "#ffffff" }}>Hot simulations</span>
         <ChevronRight size={18} color="#8a94a6" />

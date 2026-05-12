@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import type { TrendingTopic } from "@/lib/types";
+import { cachedJson, readClientCache } from "@/lib/client-cache";
 
 // ── CATEGORY ICON (letter fallback) ──────────────────────────────────────────
 export function catIcon(cat: string): { letter: string; bg: string } {
@@ -242,10 +243,7 @@ export function useSection(endpoint: string) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    fetch(endpoint, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
+    const applyData = (j: any) => {
         const raw = (Array.isArray(j?.data) ? j.data : []) as Array<{
           id?: string;
           topic?: string;
@@ -296,7 +294,18 @@ export function useSection(endpoint: string) {
           image: r.image || undefined,
         }));
         setData(topics);
-      })
+    };
+
+    const cached = readClientCache<any>(endpoint);
+    if (cached) {
+      applyData(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    cachedJson<any>(endpoint, { ttlMs: 90_000 })
+      .then(applyData)
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [endpoint]);

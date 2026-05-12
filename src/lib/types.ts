@@ -26,6 +26,10 @@ export interface TrendingTopic {
     label: string
     prob: number
     hemloProb?: number
+    tokenId?: string
+    clobTokenId?: string
+    image?: string
+    icon?: string
   }>
   icon?: string
   image?: string

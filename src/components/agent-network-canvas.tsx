@@ -2,10 +2,21 @@
 
 import { useEffect, useRef } from "react";
 
-export function AgentNetworkCanvas({ agentCount, isRunning }: { agentCount: number; isRunning: boolean }) {
+type NetworkNode = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  r: number;
+  phase: number;
+  color: string;
+  active: boolean;
+};
+
+export function AgentNetworkCanvas({ agentCount, isRunning, height = 160 }: { agentCount: number; isRunning: boolean; height?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
-  const nodesRef = useRef<any[]>([]);
+  const nodesRef = useRef<NetworkNode[]>([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -81,7 +92,7 @@ export function AgentNetworkCanvas({ agentCount, isRunning }: { agentCount: numb
     }
     animRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animRef.current);
-  }, [agentCount, isRunning]);
+  }, [agentCount, isRunning, height]);
 
-  return <canvas ref={canvasRef} style={{ width: "100%", height: 160, background: "#0a0a0a", border: "1px solid #333" }} />;
+  return <canvas ref={canvasRef} style={{ width: "100%", height, background: "#0a0a0a", border: "1px solid #333" }} />;
 }

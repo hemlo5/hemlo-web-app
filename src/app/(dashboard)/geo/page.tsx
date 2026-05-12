@@ -33,7 +33,7 @@ export default function GeoImpactPage() {
   const filtered = filter === "all" ? topics : topics.filter((t) => t.category === filter)
 
   return (
-    <div style={{ minHeight: "100vh", background: "#000000", display: "flex", flexDirection: "column" }}>
+    <div style={{ minHeight: "100vh", background: "#15191d", display: "flex", flexDirection: "column" }}>
 
       {/* Header */}
       <div style={{ padding: "clamp(12px, 3vw, 20px) clamp(16px, 4vw, 28px) 0", borderBottom: "1px solid #000000" }}>
@@ -201,7 +201,7 @@ export default function GeoImpactPage() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.97, y: 10 }}
               onClick={(e) => e.stopPropagation()}
-              style={{ background: "#000000", border: "1px solid #000000", borderRadius: 16, width: "100%", maxWidth: 480, padding: 28, position: "relative" }}
+              style={{ background: "#15191d", border: "1px solid #000000", borderRadius: 16, width: "100%", maxWidth: 480, padding: 28, position: "relative" }}
             >
               <button
                 onClick={() => setSelectedTopic(null)}

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
 export const dynamic = "force-dynamic"
@@ -6,8 +6,11 @@ export const dynamic = "force-dynamic"
 type MarketOutcome = {
   label: string
   prob?: number
+  hemloProb?: number
   tokenId?: string
   clobTokenId?: string
+  image?: string
+  icon?: string
 }
 
 const POLY_HEADERS = { "User-Agent": "hemlo/1.0" }
@@ -140,20 +143,41 @@ function normalizeOutcomes(result: any, marketInfo: any): MarketOutcome[] {
   const infoOutcomes = Array.isArray(marketInfo?.outcomes) ? marketInfo.outcomes : []
   const options = Array.isArray(result?.options) ? result.options : []
   const probs = result?.probabilityModel?.predictionMarket || {}
+  const hemloProbs =
+    result?.probabilityModel?.hemloModel ||
+    result?.outcome_probabilities ||
+    result?.outcomeProbabilities ||
+    {}
 
   const raw = marketOutcomes.length
     ? marketOutcomes
     : infoOutcomes.length
       ? infoOutcomes
       : options.map((label: string) => ({ label, prob: probs?.[label] }))
+  const infoByLabel = new Map<string, any>()
+  infoOutcomes.forEach((o: any) => {
+    const key = normalizeKey(String(o?.label || o?.name || o || ""))
+    if (key) infoByLabel.set(key, o)
+  })
 
   return raw
-    .map((o: any) => ({
-      label: String(o?.label || o?.name || o || "").trim(),
-      prob: o?.prob !== undefined ? Math.round(toNumber(o.prob, 0)) : undefined,
-      tokenId: o?.tokenId || o?.clobTokenId,
-      clobTokenId: o?.clobTokenId || o?.tokenId,
-    }))
+    .map((o: any, index: number) => {
+      const label = String(o?.label || o?.name || o || "").trim()
+      const info = infoByLabel.get(normalizeKey(label)) || infoOutcomes[index] || {}
+      return {
+        label,
+        prob: o?.prob !== undefined ? Math.round(toNumber(o.prob, 0)) : info?.prob !== undefined ? Math.round(toNumber(info.prob, 0)) : undefined,
+        hemloProb: o?.hemloProb !== undefined
+          ? Math.round(toNumber(o.hemloProb, 0))
+          : hemloProbs?.[label] !== undefined
+            ? Math.round(toNumber(hemloProbs[label], 0))
+            : undefined,
+        tokenId: o?.tokenId || o?.clobTokenId || info?.tokenId || info?.clobTokenId,
+        clobTokenId: o?.clobTokenId || o?.tokenId || info?.clobTokenId || info?.tokenId,
+        image: o?.image || o?.icon || info?.image || info?.icon,
+        icon: o?.icon || o?.image || info?.icon || info?.image,
+      }
+    })
     .filter((o: MarketOutcome) => o.label)
     .slice(0, 8)
 }
@@ -174,6 +198,8 @@ function parsePolymarketEvent(ev: any) {
           prob: Math.max(1, Math.min(99, parseFirstOutcomeProb(m))),
           tokenId: tokenIds[0],
           clobTokenId: tokenIds[0],
+          image: m?.image || m?.icon || ev?.image || ev?.icon || "",
+          icon: m?.icon || m?.image || ev?.icon || ev?.image || "",
         }
       })
       .filter((o) => o.label)
@@ -283,7 +309,8 @@ async function enrichMarketSimulation(mapped: ReturnType<typeof mapCustomSimulat
 
   const hasImage = Boolean(mapped.icon || mapped.image)
   const hasTokens = mapped.outcomes.some((o) => o.tokenId || o.clobTokenId)
-  if (hasImage && hasTokens) return mapped
+  const hasOutcomeImages = mapped.marketType !== "categorical" || mapped.outcomes.every((o) => o.image || o.icon)
+  if (hasImage && hasTokens && hasOutcomeImages) return mapped
 
   const enrichment = await fetchPolymarketEnrichment(mapped.marketId, mapped.topic)
   if (!enrichment) return mapped
@@ -297,6 +324,8 @@ async function enrichMarketSimulation(mapped: ReturnType<typeof mapCustomSimulat
           prob: o.prob ?? enriched?.prob,
           tokenId: o.tokenId || enriched?.tokenId,
           clobTokenId: o.clobTokenId || enriched?.clobTokenId || enriched?.tokenId,
+          image: o.image || o.icon || enriched?.image || enriched?.icon,
+          icon: o.icon || o.image || enriched?.icon || enriched?.image,
         }
       })
     : enrichment.outcomes
@@ -338,7 +367,7 @@ function mapLegacySimulation(sim: any) {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!supaUrl || !supaKey) {
@@ -346,17 +375,28 @@ export async function GET() {
   }
 
   try {
+    const { searchParams } = new URL(req.url)
+    const scope = searchParams.get("scope") || "top"
+    const limit = Math.max(1, Math.min(200, parseInt(searchParams.get("limit") || (scope === "all" ? "120" : "30")) || 30))
+    const includeAllSources = scope === "all"
+    const onlyToday = scope === "today"
     const supa = createClient(supaUrl, supaKey)
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const customLimit = includeAllSources ? Math.max(limit, 120) : Math.max(limit * 3, 60)
+
+    let customQuery = supa
+      .from("custom_simulations")
+      .select("id, scenario, domain, status, created_at, completed_at, result, primary_probability, agent_count, rounds")
+      .eq("status", "completed")
+      .order("completed_at", { ascending: false })
+      .limit(customLimit)
+
+    if (onlyToday) {
+      customQuery = customQuery.gte("completed_at", since)
+    }
 
     const [{ data: customRows, error: customError }, { data: legacyRows }] = await Promise.all([
-      supa
-        .from("custom_simulations")
-        .select("id, scenario, domain, status, created_at, completed_at, result, primary_probability, agent_count, rounds")
-        .eq("status", "completed")
-        .gte("completed_at", since)
-        .order("completed_at", { ascending: false })
-        .limit(30),
+      customQuery,
       supa
         .from("simulations")
         .select("id, topic, created_at, analysis_data, crowd_odds, hemlo_odds, divergence, market_type, outcomes")
@@ -368,17 +408,27 @@ export async function GET() {
       console.error("DB error fetching custom simulations:", customError)
     }
 
-    const marketRows = (customRows || [])
+    const usableRows = (customRows || [])
       .filter(isUsableCustomResult)
       .map(mapCustomSimulation)
-      .filter((sim) => sim.source === "polymarket" || sim.source === "kalshi")
 
+    const marketRows = usableRows.filter((sim) => sim.source === "polymarket" || sim.source === "kalshi")
+    const nonMarketRows = includeAllSources || scope === "top"
+      ? usableRows.filter((sim) => sim.source !== "polymarket" && sim.source !== "kalshi")
+      : []
     const enrichedMarketRows = await Promise.all(marketRows.map(enrichMarketSimulation))
-    const fallbackLegacyRows = enrichedMarketRows.length ? [] : (legacyRows || []).map(mapLegacySimulation)
+    const fallbackLegacyRows = includeAllSources || enrichedMarketRows.length === 0
+      ? (legacyRows || []).map(mapLegacySimulation)
+      : []
 
-    const mapped = dedupeMarkets([...enrichedMarketRows, ...fallbackLegacyRows])
-      .sort((a, b) => Math.abs(Number(b.divergence || 0)) - Math.abs(Number(a.divergence || 0)))
-      .slice(0, 30)
+    const mapped = dedupeMarkets([...enrichedMarketRows, ...nonMarketRows, ...fallbackLegacyRows])
+      .sort((a, b) => {
+        if (scope === "all") {
+          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        }
+        return Math.abs(Number(b.divergence || 0)) - Math.abs(Number(a.divergence || 0))
+      })
+      .slice(0, limit)
 
     return NextResponse.json({ data: mapped })
   } catch (err: any) {

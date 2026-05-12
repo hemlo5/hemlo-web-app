@@ -289,7 +289,7 @@ function ThreatMeter({ score }: { score: number }) {
       <div
         style={{
           height: 10,
-          background: "#000000",
+          background: "#15191d",
           borderRadius: 99,
           overflow: "hidden",
           position: "relative",
@@ -379,7 +379,7 @@ function SectorImpact({
             <div
               style={{
                 height: 4,
-                background: "#000000",
+                background: "#15191d",
                 borderRadius: 99,
                 overflow: "hidden",
               }}
@@ -448,7 +448,7 @@ function NewsDetailPanel({
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "#000000",
+          background: "#15191d",
           border: "1px solid #000000",
           borderRadius: 18,
           width: "100%",
@@ -877,7 +877,7 @@ function NewsDetailPanel({
                 <div
                   key={t.label}
                   style={{
-                    background: "#000000",
+                    background: "#15191d",
                     borderRadius: 8,
                     padding: "10px 12px",
                     textAlign: "center",
@@ -1146,7 +1146,7 @@ function IntelligenceCard({
           top: 0,
           bottom: 0,
           width: 4,
-          background: "#000000",
+          background: "#15191d",
           overflow: "hidden",
         }}
       >
@@ -1312,7 +1312,7 @@ function IntelligenceCard({
               style={{
                 fontSize: 10,
                 color: "var(--text-muted)",
-                background: "#000000",
+                background: "#15191d",
                 border: "1px solid #000000",
                 borderRadius: 999,
                 padding: "2px 8px",
@@ -1368,7 +1368,7 @@ function LiveTicker({ topics }: { topics: TrendingTopic[] }) {
     <div
       style={{
         borderBottom: "1px solid #000000",
-        background: "#000000",
+        background: "#15191d",
         padding: "8px 0",
         overflow: "hidden",
         position: "relative",
@@ -1558,7 +1558,7 @@ function TrendSidebar({
                   <div
                     style={{
                       height: 3,
-                      background: "#000000",
+                      background: "#15191d",
                       borderRadius: 99,
                       overflow: "hidden",
                     }}
@@ -1736,7 +1736,7 @@ function PredictionMiniWidget({
                         style={{
                           flex: 1,
                           height: 4,
-                          background: "#000000",
+                          background: "#15191d",
                           borderRadius: 99,
                           overflow: "hidden",
                           display: "flex",
@@ -1758,7 +1758,7 @@ function PredictionMiniWidget({
                         style={{
                           flex: 1,
                           height: 4,
-                          background: "#000000",
+                          background: "#15191d",
                           borderRadius: 99,
                           overflow: "hidden",
                         }}
@@ -1870,7 +1870,7 @@ export default function DashboardPage() {
     <div
       style={{
         minHeight: "100vh",
-        background: "#000000",
+        background: "#15191d",
         display: "flex",
         flexDirection: "column",
       }}
@@ -2006,7 +2006,7 @@ export default function DashboardPage() {
                 width: 28,
                 height: 28,
                 borderRadius: "50%",
-                background: "#000000",
+                background: "#15191d",
                 border: "1px solid #000000",
                 cursor: "pointer",
                 display: "flex",
@@ -2023,7 +2023,7 @@ export default function DashboardPage() {
                 width: 28,
                 height: 28,
                 borderRadius: "50%",
-                background: "#000000",
+                background: "#15191d",
                 border: "1px solid #000000",
                 cursor: "pointer",
                 display: "flex",

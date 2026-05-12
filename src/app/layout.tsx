@@ -3,20 +3,23 @@ import { GoogleAnalytics } from "@next/third-parties/google"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "HEMLO AI",
-  description: "Advanced multi-agent AI simulation platform for trades, ideas, and world events.",
-  keywords: ["AI simulation", "prediction", "sentiment analysis", "market prediction"],
+  title: {
+    default: "Hemlo AI",
+    template: "%s | Hemlo",
+  },
+  description: "AI simulation intelligence for Polymarket, Kalshi, prediction markets, and world events.",
+  keywords: ["Polymarket AI", "Kalshi AI", "prediction market analysis", "AI simulation", "MiroFish", "market prediction"],
   icons: {
     icon: "/favicon.png",
   },
   openGraph: {
-    title: "HEMLO AI",
-    description: "Multi-agent AI simulation platform.",
+    title: "Hemlo AI",
+    description: "AI simulation intelligence for prediction markets.",
     type: "website",
-    url: "https://app.hemloai.com",
+    url: "https://hemloai.com",
     siteName: "Hemlo AI",
   },
-  metadataBase: new URL("https://app.hemloai.com"),
+  metadataBase: new URL("https://hemloai.com"),
 }
 
 export default function RootLayout({
@@ -37,4 +40,3 @@ export default function RootLayout({
     </html>
   )
 }
-

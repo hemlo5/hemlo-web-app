@@ -61,7 +61,7 @@ function parseEvent(ev: any) {
     : `$${Math.round(totalVolume)}`
 
   // --- Determine outcomes ---
-  let outcomes: Array<{ label: string; prob: number; tokenId?: string }> = []
+  let outcomes: Array<{ label: string; prob: number; tokenId?: string; clobTokenId?: string; image?: string; icon?: string }> = []
   let marketType: "binary" | "categorical" = "binary"
   let outcomeTokenIds: string[] = []
 
@@ -97,10 +97,15 @@ function parseEvent(ev: any) {
             } catch { prob = 50 }
           }
           const tokenIds = parseClobTokenIds(m)
+          const optionImage = m.image || m.icon || ev.image || ev.icon || ""
+          const optionIcon = m.icon || m.image || ev.icon || ev.image || ""
           return {
             label: m.groupItemTitle || m.question || "Option",
             prob: Math.min(99, Math.max(1, prob)),
             tokenId: tokenIds[0],
+            clobTokenId: tokenIds[0],
+            image: optionImage,
+            icon: optionIcon,
           }
         })
         .filter((o) => o.prob > 0 && o.prob < 100) // drop fully-resolved outcomes

@@ -3,8 +3,7 @@ import { createClient as createSupabaseAdmin } from "@supabase/supabase-js"
 import { createClient } from "@/utils/supabase/server"
 import { checkSimulationLimit, incrementSimulationCount } from "@/lib/simulation-usage"
 
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyDh7Bf_x_kwWsPkoCo7u_7rAGGGiF9K_LI"
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`
+const GEMINI_KEY = process.env.GEMINI_API_KEY
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,6 +22,7 @@ export async function POST(req: NextRequest) {
 
     const { question, crowdOdds, volume, endDate, category, marketType = "binary", outcomes } = await req.json()
     if (!question) return NextResponse.json({ error: "question required" }, { status: 400 })
+    if (!GEMINI_KEY) return NextResponse.json({ error: "GEMINI_API_KEY is not configured" }, { status: 500 })
 
     const isCat = marketType === "categorical" && Array.isArray(outcomes) && outcomes.length > 0
     const outcomeLabels: string[] = isCat ? outcomes.map((o: any) => o.label) : ["YES", "NO"]
@@ -81,7 +81,7 @@ The JSON must have exactly these fields:
 
 REMINDER: In probabilityModel.predictionMarket and probabilityModel.hemloModel, the keys MUST be ${outcomeLabels.map(l => `"${l}"`).join(", ")} — NEVER "YES" or "NO" unless those are literally the outcome labels.`
 
-    const geminiRes = await fetch(GEMINI_URL, {
+    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

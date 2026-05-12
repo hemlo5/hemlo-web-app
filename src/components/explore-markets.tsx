@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Loader2, ExternalLink } from "lucide-react";
 import { PolyDetailModal, type PolyMarket } from "./poly-detail-modal";
+import { MirofishLaunchPanel, toMirofishLaunchMarket, type MirofishLaunchMarket } from "./mirofish-launch-panel";
+import { cachedJson, readClientCache } from "@/lib/client-cache";
 
 // ── CATEGORIES ────────────────────────────────────────────────────────────────
 const POLY_CATS = [
@@ -45,7 +47,7 @@ type KalshiMarket = {
   link: string;
   // Multi-outcome support (e.g. "Who will be next Pope?")
   marketType?: "binary" | "categorical";
-  outcomes?: { label: string; prob: number; volumeRaw: number }[];
+  outcomes?: { label: string; prob: number; volumeRaw: number; image?: string; icon?: string }[];
 };
 
 // (No static KALSHI_IMG map needed — each market carries its own image from the API)
@@ -55,7 +57,7 @@ function kalshiToPolyMarket(k: KalshiMarket): PolyMarket {
   // Use rich outcomes if available (multi-outcome markets), otherwise binary yes/no
   const outcomes =
     k.outcomes && k.outcomes.length > 0
-      ? k.outcomes.map((o) => ({ label: o.label, prob: o.prob, volumeRaw: o.volumeRaw }))
+      ? k.outcomes.map((o) => ({ label: o.label, prob: o.prob, volumeRaw: o.volumeRaw, image: o.image || o.icon || k.image, icon: o.icon || o.image || k.image }))
       : [
           { label: "Yes", prob: k.yesPrice, volumeRaw: k.volumeRaw || 0 },
           { label: "No",  prob: k.noPrice, volumeRaw: 0  },
@@ -90,33 +92,10 @@ function kalshiToPolyMarket(k: KalshiMarket): PolyMarket {
 
 // Outcome row colors — first 2 are green/red for binary, rest for multi-choice
 const OUTCOME_COLORS = ["#22c55e", "#ef4444", "#3b82f6", "#f59e0b", "#a855f7", "#ec4899"];
-const MARKET_CARD_BG = "#121821";
-const MARKET_CARD_HOVER_BG = "#171f2a";
+const MARKET_CARD_BG = "#1e2428";
+const MARKET_CARD_HOVER_BG = "#2a3136";
 const MARKET_CARD_BORDER = "#2a3444";
-const MARKET_PANEL_BG = "#080b11";
-
-function encodeMarketOutcomes(m: Pick<PolyMarket, "outcomes" | "marketType">) {
-  const raw = Array.isArray(m.outcomes) ? m.outcomes : [];
-  const outcomes = raw
-    .filter((o) => o?.label)
-    .slice(0, 12)
-    .map((o) => ({
-      label: String(o.label).trim(),
-      prob: Number.isFinite(Number(o.prob)) ? Math.round(Number(o.prob)) : undefined,
-    }));
-
-  const normalized = outcomes.length >= 2
-    ? outcomes
-    : [
-        { label: "Yes", prob: outcomes[0]?.prob ?? 50 },
-        { label: "No", prob: 100 - (outcomes[0]?.prob ?? 50) },
-      ];
-
-  return {
-    marketType: m.marketType || (normalized.length > 2 ? "categorical" : "binary"),
-    outcomesParam: encodeURIComponent(JSON.stringify(normalized)),
-  };
-}
+const MARKET_PANEL_BG = "#15191d";
 
 // ── KALSHI CARD ───────────────────────────────────────────────────────────────
 function KalshiCard({ m, onClick }: { m: KalshiMarket; onClick: () => void }) {
@@ -272,11 +251,17 @@ function PolyCard({ m, onClick }: { m: PolyMarket; onClick: () => void }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
         {displayOutcomes.map((o, i) => {
           const color = colors[i % colors.length];
+          const optionImage = o.icon || o.image;
           return (
             <div key={o.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                  <span style={{ color: "#d1d5db", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 140 }}>{o.label}</span>
+                  <span style={{ color: "#d1d5db", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150, display: "flex", alignItems: "center", gap: 7 }}>
+                    {optionImage && (
+                      <img src={optionImage} alt="" style={{ width: 20, height: 20, borderRadius: 6, objectFit: "cover", flexShrink: 0, background: "#202a33" }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                    )}
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{o.label}</span>
+                  </span>
                 </div>
                 <div style={{ height: 3, background: "#1f2330", borderRadius: 3, overflow: "hidden" }}>
                   <div style={{ height: "100%", width: `${o.prob}%`, background: color, borderRadius: 3 }} />
@@ -363,14 +348,20 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
 
   // Selected market for modal (shared)
   const [selected, setSelected] = useState<PolyMarket | null>(null);
+  const [launchMarket, setLaunchMarket] = useState<MirofishLaunchMarket | null>(null);
 
   // Fetch Polymarket whenever category / search / limit changes
   useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams({ category: activeCat, limit: String(polyLimit) });
     if (searchQuery) params.set("q", searchQuery);
-    fetch(`/api/polymarket-browse?${params}`)
-      .then(r => r.json())
+    const endpoint = `/api/polymarket-browse?${params}`;
+    const cached = readClientCache<any>(endpoint);
+    if (cached) {
+      setMarkets(cached.markets || []);
+      setLoading(false);
+    }
+    cachedJson<any>(endpoint, { ttlMs: 90_000 })
       .then(d => setMarkets(d.markets || []))
       .catch(() => setMarkets([]))
       .finally(() => setLoading(false));
@@ -389,8 +380,15 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
     setKalshiLoading(true);
     const params = new URLSearchParams({ category: kalshiActiveCat });
     if (kalshiSearchQuery) params.set("q", kalshiSearchQuery);
-    fetch(`/api/kalshi-markets?${params}`)
-      .then(r => r.json())
+    const endpoint = `/api/kalshi-markets?${params}`;
+    const cached = readClientCache<any>(endpoint);
+    if (cached) {
+      setKalshiMarkets(cached.markets || []);
+      setKalshiCursor(cached.cursor || "");
+      setKalshiHasMore(cached.hasMore ?? false);
+      setKalshiLoading(false);
+    }
+    cachedJson<any>(endpoint, { ttlMs: 90_000 })
       .then(d => {
         setKalshiMarkets(d.markets || []);
         setKalshiCursor(d.cursor || "");
@@ -407,8 +405,7 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
     const params = new URLSearchParams({ category: kalshiActiveCat });
     if (kalshiSearchQuery) params.set("q", kalshiSearchQuery);
     if (kalshiCursor) params.set("cursor", kalshiCursor);
-    fetch(`/api/kalshi-markets?${params}`)
-      .then(r => r.json())
+    cachedJson<any>(`/api/kalshi-markets?${params}`, { ttlMs: 90_000 })
       .then(d => {
         setKalshiMarkets(prev => [...prev, ...(d.markets || [])]);
         setKalshiCursor(d.cursor || "");
@@ -458,10 +455,9 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
           marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
           <div className="explore-header-text">
-            <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 22, fontWeight: 800,
-              color: "var(--text-primary)", marginBottom: 4 }}>
+            <h2 className="font-semibold text-heading-xl" style={{ color: "var(--text-primary)", marginBottom: 4 }}>
               Explore All Markets
-            </div>
+            </h2>
             <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
               {topTab === "polymarket"
                 ? "Live Polymarket predictions — click SIMULATE to model with MiroFish"
@@ -686,12 +682,17 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
               onClose={() => setSelected(null)}
               onSimulate={() => {
                 const dom = topTab === "polymarket" ? "polymarket" : "kalshi";
-                const { marketType, outcomesParam } = encodeMarketOutcomes(selected);
-                window.location.href = `/simulate/mirofish?scenario=${encodeURIComponent(selected.question)}&domain=${dom}&marketId=${encodeURIComponent(selected.id)}&vol=${encodeURIComponent(selected.volume)}&liq=${encodeURIComponent(selected.liquidityClob || 0)}&last=${encodeURIComponent(selected.lastTradePrice || 0)}&img=${encodeURIComponent(selected.icon || selected.image || '')}&marketType=${encodeURIComponent(marketType)}&outcomes=${outcomesParam}`;
+                setLaunchMarket(toMirofishLaunchMarket({ ...selected, source: dom }, dom));
+                setSelected(null);
               }}
             />
           )}
         </AnimatePresence>
+
+        <MirofishLaunchPanel
+          market={launchMarket}
+          onClose={() => setLaunchMarket(null)}
+        />
       </div>
     </>
   );

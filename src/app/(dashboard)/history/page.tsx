@@ -174,7 +174,7 @@ export default function HistoryPage() {
         </div>
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 800, margin: "0 0 6px 0", fontFamily: "'Space Grotesk', sans-serif" }}>
-            Simulation History
+            My Sims
           </h1>
           <p style={{ fontSize: 14, color: "var(--text-muted)", margin: 0 }}>
             Browse your past predictions and analysis breakdowns.
@@ -185,7 +185,7 @@ export default function HistoryPage() {
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "100px", gap: 12, color: "var(--text-muted)" }}>
           <Loader2 size={20} className="animate-spin" />
-          <span style={{ fontSize: 14, fontWeight: 600 }}>Loading history...</span>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>Loading your sims...</span>
         </div>
       ) : sims.length === 0 ? (
         <div style={{ textAlign: "center", padding: "100px", background: "#050505", border: "1px dashed #222", borderRadius: 16 }}>

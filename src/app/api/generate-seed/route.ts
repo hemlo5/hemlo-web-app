@@ -7,8 +7,9 @@ export const maxDuration = 120
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const SF_BASE  = () => process.env.LLM_BASE_URL || "https://api.siliconflow.com/v1"
 const SF_KEY   = () => process.env.LLM_API_KEY!
-const SF_MODEL = () => process.env.LLM_MODEL || "deepseek-ai/DeepSeek-V3"
+const SF_MODEL = () => process.env.LLM_MODEL || process.env.LLM_MODEL_NAME || "deepseek-ai/DeepSeek-V3"
 const TAV_KEY  = () => process.env.TAVILY_API_KEY!
+const GEMINI_MODEL = () => process.env.GEMINI_MODEL || "gemini-2.5-flash"
 
 // ── STEP 1: QUERY GENERATOR ──────────────────────────────────────────────────
 // Ask DeepSeek to convert the raw user prompt into a precision search query
@@ -168,11 +169,13 @@ async function generateGroundedSeed(scenario: string, newsContext: string): Prom
 
 Return ONLY the document text — no JSON, no code blocks, no preamble.`
 
+  const trimmedContext = newsContext.slice(0, 14000)
+
   const userContent = `## SIMULATION SCENARIO
 "${scenario}"
 
 ## REAL-TIME NEWS DATA (Your ONLY source of truth — use NOTHING else)
-${newsContext}
+${trimmedContext}
 
 ## TASK
 Generate a comprehensive Reality Seed document (minimum 600 words) using ONLY the above news data.`
@@ -229,7 +232,7 @@ Generate a comprehensive Reality Seed document (minimum 600 words) with sections
 Return ONLY the document. No preamble. Base everything strictly on the provided news data.`
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL()}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -241,7 +244,10 @@ Return ONLY the document. No preamble. Base everything strictly on the provided 
     }
   )
 
-  if (!res.ok) throw new Error(`Gemini error ${res.status}`)
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Gemini error ${res.status}: ${err.slice(0, 300)}`)
+  }
   const data = await res.json()
   const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "").trim()
   if (!text) throw new Error("Gemini returned empty content")
@@ -249,6 +255,116 @@ Return ONLY the document. No preamble. Base everything strictly on the provided 
 }
 
 // ── MAIN ─────────────────────────────────────────────────────────────────────
+type ExtractedSource = {
+  title: string
+  url: string
+  date: string
+  body: string
+}
+
+function compactText(value: string) {
+  return value.replace(/\s+/g, " ").trim()
+}
+
+function truncateText(value: string, limit: number) {
+  const compact = compactText(value)
+  if (compact.length <= limit) return compact
+  return `${compact.slice(0, Math.max(0, limit - 3)).trim()}...`
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function extractTavilyAnswer(newsContext: string) {
+  const match = newsContext.match(/=== TAVILY ANSWER ===\n([\s\S]*?)(?:\n---\n\n|$)/)
+  return truncateText(match?.[1] || "", 1200)
+}
+
+function extractTavilySources(newsContext: string): ExtractedSource[] {
+  return newsContext
+    .split(/\n---\n\n/g)
+    .map((block) => {
+      const header = block.match(/^=== SOURCE\s+\d+(?:\s+\[([^\]]+)\])?:\s*(.*?)\s*===/m)
+      if (!header) return null
+
+      const url = block.match(/^URL:\s*(.+)$/m)?.[1]?.trim() || ""
+      const body = block
+        .replace(/^=== SOURCE[^\n]*\n/m, "")
+        .replace(/^URL:[^\n]*\n?/m, "")
+        .trim()
+
+      return {
+        title: truncateText(header[2] || "Untitled source", 180),
+        date: header[1] || "",
+        url,
+        body: truncateText(body, 850),
+      }
+    })
+    .filter((source): source is ExtractedSource => Boolean(source))
+}
+
+function buildExtractiveSeed(scenario: string, newsContext: string, sourcesSummary: string) {
+  const answer = extractTavilyAnswer(newsContext)
+  const sources = extractTavilySources(newsContext).slice(0, 8)
+  const fallbackEvidence = truncateText(sourcesSummary || newsContext, 5000)
+
+  const evidence = sources.length
+    ? sources.map((source, index) => {
+        const date = source.date ? ` [${source.date}]` : ""
+        const url = source.url ? `\nURL: ${source.url}` : ""
+        const body = source.body || "No extractable body text was returned for this source."
+        return `Source ${index + 1}${date}: ${source.title}${url}\nEvidence: ${body}`
+      }).join("\n\n")
+    : fallbackEvidence
+
+  const actorLines = sources.length
+    ? sources.map((source) => `- ${source.title}${source.date ? ` (${source.date})` : ""}`).join("\n")
+    : "- Data not available in current sources."
+
+  const timeline = sources.length
+    ? sources.map((source) => `- ${source.date || "Date not available"} - ${source.title}`).join("\n")
+    : "- Date not available in current sources - no dated events extracted."
+
+  return `CONTEXT & BACKGROUND
+Scenario: "${scenario}"
+
+Tavily returned current source material, but both LLM seed synthesis providers were temporarily unavailable. This Reality Seed is intentionally extractive: agents must use the evidence below as the source of truth and treat missing details as unavailable.
+
+Tavily answer:
+${answer || "No Tavily answer was returned."}
+
+SOURCE EVIDENCE
+${evidence || "No extractable source evidence was returned."}
+
+KEY ACTORS & STAKEHOLDERS
+Named actors should be taken only from the source headlines and excerpts above:
+${actorLines}
+
+CURRENT STATE OF PLAY
+Agents should anchor their beliefs to the source excerpts above. Any price, probability, date, or statistic not present in those excerpts should be treated as data not available in current sources.
+
+TENSION POINTS & FAULT LINES
+- Which source claims are confirmed by multiple sources versus only one source.
+- Whether the market's current outcomes and prices are supported or challenged by the latest source evidence.
+- Whether new official statements, market data, injuries, polling, court decisions, macro data, or geopolitical developments change the base rate.
+- Whether the question has binary or multiple outcomes, and which exact listed outcomes are supported by the evidence.
+
+TIMELINE OF KEY EVENTS
+${timeline}
+
+SIMULATION VARIABLES
+- Recency and credibility of each source.
+- Direction and magnitude of current market prices listed in the prompt.
+- Number of independent sources supporting each outcome.
+- Presence or absence of official confirmation.
+- Any fresh quantitative indicators in the source excerpts.
+- Evidence that directly contradicts the leading market outcome.
+
+GROUNDING RULE
+Agents must not introduce facts beyond the source evidence above and the explicit market outcomes supplied by Hemlo. If a needed fact is missing, agents should say it is not available in current sources.`
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { scenario } = await req.json()
@@ -263,8 +379,8 @@ export async function POST(req: NextRequest) {
     try {
       searchQuery = await generateSearchQuery(scenario)
       console.log(`[generate-seed] Step 1 ✓ Search query: "${searchQuery}"`)
-    } catch (err: any) {
-      console.warn("[generate-seed] Step 1 failed, using scenario as fallback:", err.message)
+    } catch (err) {
+      console.warn("[generate-seed] Step 1 failed, using scenario as fallback:", getErrorMessage(err))
       searchQuery = scenario.slice(0, 200) // fallback: use raw scenario
     }
 
@@ -278,8 +394,8 @@ export async function POST(req: NextRequest) {
       tavilySourcesSummary = tavilyResult.sourcesSummary
       tavilySuccess = true
       console.log(`[generate-seed] Step 2 ✓ Tavily returned ${newsContext.length} chars`)
-    } catch (err: any) {
-      console.warn("[generate-seed] Step 2 Tavily failed:", err.message)
+    } catch (err) {
+      console.warn("[generate-seed] Step 2 Tavily failed:", getErrorMessage(err))
       newsContext = "" // will fall through to ungrounded generation
     }
 
@@ -293,18 +409,17 @@ export async function POST(req: NextRequest) {
         seed = await generateGroundedSeed(scenario, newsContext)
         usedProvider = "siliconflow+tavily"
         console.log(`[generate-seed] Step 3 ✓ Grounded seed via SiliconFlow, length: ${seed.length}`)
-      } catch (sfErr: any) {
-        console.warn("[generate-seed] SiliconFlow grounded gen failed, trying Gemini:", sfErr.message)
+      } catch (sfErr) {
+        console.warn("[generate-seed] SiliconFlow grounded gen failed, trying Gemini:", getErrorMessage(sfErr))
         try {
           seed = await generateGroundedSeedViaGemini(scenario, newsContext)
           usedProvider = "gemini+tavily"
           console.log(`[generate-seed] Step 3 ✓ Grounded seed via Gemini, length: ${seed.length}`)
-        } catch (gemErr: any) {
-          console.error("[generate-seed] Both grounded providers failed:", gemErr.message)
-          return NextResponse.json(
-            { error: "Seed generation failed — both LLM providers failed with Tavily data." },
-            { status: 502 }
-          )
+        } catch (gemErr) {
+          console.error("[generate-seed] Both grounded providers failed:", getErrorMessage(gemErr))
+          seed = buildExtractiveSeed(scenario, newsContext, tavilySourcesSummary)
+          usedProvider = "extractive+tavily"
+          console.warn(`[generate-seed] Step 3 recovered with extractive Tavily seed, length: ${seed.length}`)
         }
       }
     } else {
@@ -342,7 +457,7 @@ export async function POST(req: NextRequest) {
       tavilyContext: tavilySourcesSummary || "",  // human-readable source list for display
       tavilySuccess,
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error("[generate-seed] Unexpected error:", error)
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
   }

@@ -34,11 +34,13 @@ export function MirofishGraphPanel({
   isSimulating,
   liveData,
   liveEvent,
+  height = 520,
 }: {
   projectId: string | null;
   isSimulating: boolean;
   liveData?: { nodes: any[]; edges: any[] } | null;
   liveEvent?: any | null;
+  height?: number | string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -492,7 +494,7 @@ export function MirofishGraphPanel({
 
   return (
     <div style={{
-      position: "relative", width: "100%", height: 520,
+      position: "relative", width: "100%", height,
       // Exact MiroFish styling: white dotted-grid background
       backgroundColor: "#FAFAFA",
       backgroundImage: "radial-gradient(#D0D0D0 1.5px, transparent 1.5px)",

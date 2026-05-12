@@ -200,7 +200,7 @@ export default function PricingPage() {
   ]
 
   return (
-    <main style={{ height: "100vh", overflowY: "auto", background: "#000000", fontFamily: "'Inter', sans-serif", color: "#fff" }}>
+    <main style={{ height: "100vh", overflowY: "auto", background: "#15191d", fontFamily: "'Inter', sans-serif", color: "#fff" }}>
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "56px 24px 100px" }}>
 
         {/* Intro */}

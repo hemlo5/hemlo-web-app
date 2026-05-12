@@ -30,7 +30,7 @@ export type PolyMarket = {
   id: string;
   slug: string;
   question: string;
-  outcomes: Array<{ label: string; prob: number; volumeRaw?: number; hemloProb?: number }>;
+  outcomes: Array<{ label: string; prob: number; volumeRaw?: number; hemloProb?: number; tokenId?: string; clobTokenId?: string; image?: string; icon?: string }>;
   marketType: "binary" | "categorical";
   volume: string;
   volumeRaw: number;
@@ -1363,9 +1363,10 @@ export function PolyDetailModal({
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {market.outcomes.map((o, i) => {
               const barColor = isBinary ? (o.label.toLowerCase() === "yes" ? "#22c55e" : "#ef4444") : colors[i % 7];
+              const outcomeImage = o.icon || o.image || market.icon;
               return (
                 <div key={o.label} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "#0f1729", border: "1px solid #222222", borderRadius: 10 }}>
-                  {market.icon && <img src={market.icon} alt="" style={{ width: 28, height: 28, borderRadius: 7 }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />}
+                  {outcomeImage && <img src={outcomeImage} alt="" style={{ width: 28, height: 28, borderRadius: 7, objectFit: "cover" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#ffffff" }}>{o.label}</div>
                     <div style={{ fontSize: 10, color: "#666666" }}>

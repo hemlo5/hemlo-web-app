@@ -9,13 +9,13 @@ export default async function RootPage({
 
   // Handle OAuth callbacks
   if (sp.code) {
-    redirect(`/auth/callback?code=${encodeURIComponent(sp.code)}&next=/polymarket`)
+    redirect(`/auth/callback?code=${encodeURIComponent(sp.code)}&next=/simulate/mirofish`)
   }
 
   if (sp.error) {
-    redirect(`/polymarket?auth_error=${encodeURIComponent(sp.error_description ?? sp.error)}`)
+    redirect(`/simulate/mirofish?auth_error=${encodeURIComponent(sp.error_description ?? sp.error)}`)
   }
 
-  // Always redirect to /polymarket
-  redirect("/polymarket")
+  // Main domain opens the MiroFish app experience.
+  redirect("/simulate/mirofish")
 }

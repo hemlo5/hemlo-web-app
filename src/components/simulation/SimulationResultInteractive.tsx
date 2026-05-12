@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Share2, FileDown, RefreshCw, Loader2, ChevronDown, ChevronRight, MessageSquare, Send, CheckCircle2, TrendingUp, Terminal, Activity, Droplets, Clock, History, BarChart3, ExternalLink } from "lucide-react";
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import { ArrowLeft, BarChart3, ExternalLink, Loader2, TrendingUp, Users, Zap } from "lucide-react";
 
 export interface SimulationPayload {
   id: string;
@@ -24,950 +25,980 @@ export interface SimulationPayload {
   options?: string[];
 }
 
-export default function SimulationResultInteractive({ initialData }: { initialData: SimulationPayload }) {
-  const router = useRouter();
-  const data = initialData;
+type OutcomeRow = {
+  label: string;
+  marketPct: number | null;
+  hemloPct: number | null;
+  image?: string;
+  icon?: string;
+  tokenId?: string;
+  clobTokenId?: string;
+};
 
-  // Derive domain info early so hooks can reference it
-  const parsedDomain = data.domain || "";
-  const baseDomain = parsedDomain.includes("|") ? parsedDomain.split("|")[0] : parsedDomain;
-  const marketSlug = parsedDomain.includes("|") ? parsedDomain.split("|")[1] : "";
+type HistoryPoint = { t: number; p: number };
+type OrderBookLevel = { price: number; size: number };
+type TradePoint = { price: number; size: number; side: string; timestamp: string; outcome: string };
+type SimilarMarket = {
+  id: string;
+  title: string;
+  source: string;
+  category?: string;
+  image?: string;
+  icon?: string;
+  volume?: string;
+  volumeRaw?: number;
+  endDate?: string;
+  link?: string;
+  outcomes?: Array<{ label: string; prob?: number; image?: string; icon?: string }>;
+};
 
-  const [openRaw, setOpenRaw] = useState(false);
-  const [openIntel, setOpenIntel] = useState(true);
-  const [ragQuery, setRagQuery] = useState("");
-  const [ragContext, setRagContext] = useState("");
-  const [openRounds, setOpenRounds] = useState<Record<number, boolean>>(() => {
-    return { 0: true };
+const MARKET_CARD_BG = "#1e2428";
+const MARKET_CARD_HOVER_BG = "#2a3136";
+const MARKET_CARD_BORDER = "#2a3444";
+
+function clampPct(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function toPct(value: unknown, fallback: number | null = null) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  if (n >= 0 && n <= 1) return clampPct(n * 100);
+  return clampPct(n);
+}
+
+function normalizeKey(value: string) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function sourceLabel(source?: string) {
+  const clean = String(source || "").toLowerCase();
+  if (clean === "kalshi") return "Kalshi";
+  if (clean === "polymarket") return "Polymarket";
+  return "Market";
+}
+
+function sourceIcon(source?: string) {
+  const clean = String(source || "").toLowerCase();
+  if (clean === "kalshi") return "/kalshi.webp";
+  if (clean === "polymarket") return "/polymarket.webp";
+  return "/logo.svg";
+}
+
+function formatMoney(value: unknown, fallback = "--") {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value === "string" && value.trim().startsWith("$")) return value.trim();
+  const n = Number(String(value).replace(/[$,]/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return typeof value === "string" && value.trim() ? value.trim() : fallback;
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}K`;
+  return `$${Math.round(n)}`;
+}
+
+function formatPrice(value: unknown, fallback = "--") {
+  const pct = toPct(value, null);
+  if (pct !== null) return `${pct}%`;
+  return fallback;
+}
+
+function formatLivePrice(value: unknown, fallback = "--") {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return formatPrice(n, fallback);
+}
+
+function formatDate(value: unknown, fallback = "--") {
+  if (!value) return fallback;
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return fallback;
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date);
+}
+
+function formatDateTime(value: unknown) {
+  if (!value) return "";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "UTC",
+    timeZoneName: "short",
+  }).format(date);
+}
+
+function formatSignedPrice(value: unknown, fallback = "--") {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  const pct = Math.abs(n) <= 1 ? Math.round(n * 100) : Math.round(n);
+  return `${pct >= 0 ? "+" : ""}${pct}%`;
+}
+
+function parseDomainMeta(domain: string) {
+  const [source = "", marketId = "", volume = "", liquidity = "", last = "", ...imageParts] = String(domain || "").split("|");
+  return {
+    source,
+    marketId,
+    volume,
+    liquidity,
+    last,
+    image: imageParts.join("|"),
+  };
+}
+
+function uniqueLabels(values: string[]) {
+  const seen = new Set<string>();
+  return values.filter((label) => {
+    const key = normalizeKey(label);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
-  
-  // Replaced old feedTab with new 3-tab layout state
-  const [activeTab, setActiveTab] = useState<"timeline" | "stream">("timeline");
-  const [showPolymarket, setShowPolymarket] = useState(false);
-  const [polyMarketData, setPolyMarketData] = useState<any>(null);
-  const [polyMarketLoading, setPolyMarketLoading] = useState(false);
-  const [chartHistory, setChartHistory] = useState<{t:number;p:number}[]>([]);
-  const [chartLoading, setChartLoading] = useState(false);
+}
 
-  const [verdict, setVerdict] = useState<string>("");
-  const [verdictLoading, setVerdictLoading] = useState(false);
+function topicTokens(value: string) {
+  const stop = new Set([
+    "will", "when", "what", "where", "which", "who", "the", "and", "for", "with", "from", "before", "after",
+    "over", "under", "market", "markets", "yes", "no", "win", "hit", "reach", "return", "happen", "occur",
+    "2025", "2026", "2027", "2028", "may", "june", "july", "december", "november", "april",
+  ]);
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[$?,.:;'"()[\]{}]/g, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 2 && !stop.has(token));
+}
 
-  // Extract enriched result fields from backend
-  const backendVerdict: string = data.result?.verdict || data.result?.tldr || "";
-  const backendConfidence: string = data.result?.confidence || "";
-  const keyFactors: string[] = Array.isArray(data.result?.key_factors) ? data.result.key_factors : [];
-  const personaHighlights: {name: string; role: string; stance: string; impact: string}[] = 
-    Array.isArray(data.result?.persona_highlights) ? data.result.persona_highlights : [];
-  const agentList: {name: string; bio: string; type: string; persona: string}[] =
-    Array.isArray(data.result?.agents) ? data.result.agents : [];
-  const stepTiming: Record<string, number> = data.result?.step_timing || {};
+function compactQuery(value: string) {
+  return uniqueLabels(topicTokens(value)).slice(0, 7).join(" ");
+}
 
+function categoryKeyFor(value: unknown) {
+  const text = String(value || "").toLowerCase();
+  if (/\b(election|politic|president|senate|congress|nominee|primary|democrat|republican|world elections)\b/.test(text)) return "politics";
+  if (/\b(nba|nfl|mlb|nhl|soccer|football|basketball|sports|champion|league|cup)\b/.test(text)) return "sports";
+  if (/\b(bitcoin|btc|ethereum|crypto|solana|doge)\b/.test(text)) return "crypto";
+  if (/\b(fed|finance|financial|stock|rate|inflation|gdp|economy|treasury|recession)\b/.test(text)) return "finance";
+  if (/\b(iran|russia|ukraine|israel|gaza|china|taiwan|war|peace|ceasefire|geopolitic)\b/.test(text)) return "geopolitics";
+  if (/\b(ai|tech|technology|openai|nvidia|apple|tesla|google|microsoft)\b/.test(text)) return "tech";
+  if (/\b(movie|music|celebrity|taylor|concert|entertainment|culture|oscars|grammy)\b/.test(text)) return "culture";
+  if (/\b(weather|hurricane|storm|rain|snow|temperature|climate)\b/.test(text)) return "weather";
+  return "";
+}
 
-  // Read Tavily RAG intel from sessionStorage
-  useEffect(() => {
-    try {
-      const q = sessionStorage.getItem("hemlo_rag_query") || "";
-      const ctx = sessionStorage.getItem("hemlo_rag_context") || "";
-      if (q) setRagQuery(q);
-      if (ctx) setRagContext(ctx);
-    } catch {}
-  }, []);
-
-  // Fetch Polymarket live data when panel is toggled on
-  useEffect(() => {
-    if (!showPolymarket || !marketSlug || polyMarketData) return;
-    setPolyMarketLoading(true);
-    fetch(`/api/polymarket-market?slug=${encodeURIComponent(marketSlug)}`)
-      .then(r => r.json())
-      .then(d => {
-        setPolyMarketData(d);
-        // Fetch chart history for the first market's YES token
-        const tokenId = d?.markets?.[0]?.clobTokenIds?.[0];
-        if (tokenId) {
-          setChartLoading(true);
-          fetch(`/api/polymarket-history?tokenId=${encodeURIComponent(tokenId)}&interval=1w&fidelity=60`)
-            .then(r => r.json())
-            .then(h => setChartHistory(h.history || []))
-            .catch(() => setChartHistory([]))
-            .finally(() => setChartLoading(false));
-        }
-      })
-      .catch(() => setPolyMarketData(null))
-      .finally(() => setPolyMarketLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPolymarket]);
-
-  // "Peek" hint: briefly slide in Polymarket panel on load so user knows it's there
-  useEffect(() => {
-    if (!marketSlug || baseDomain.toLowerCase() !== "polymarket") return;
-    // Wait for page to settle, then peek
-    const peekIn = setTimeout(() => setShowPolymarket(true), 1800);
-    // Slide back after 1.8s of showing
-    const peekOut = setTimeout(() => setShowPolymarket(false), 3600);
-    return () => { clearTimeout(peekIn); clearTimeout(peekOut); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Use backend verdict if available, otherwise call /api/sim-qa
-  useEffect(() => {
-    // If backend already gave us a verdict, use it directly
-    if (backendVerdict) {
-      setVerdict(backendVerdict);
-      return;
-    }
-    const reportTextRaw = data?.result?.report_text || data?.report_text || data?.result?.report?.report_text || "";
-    if (!reportTextRaw) return;
-    if (verdict || verdictLoading) return;
-    setVerdictLoading(true);
-    fetch("/api/sim-qa", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        question: data.scenario,
-        scenario: data.scenario,
-        report_text: reportTextRaw,
-        round_logs: data.result?.round_logs || data.round_logs || [],
-      }),
-    })
-      .then(r => r.json())
-      .then(d => setVerdict(d.answer || ""))
-      .catch(() => setVerdict(""))
-      .finally(() => setVerdictLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
-
-  const toggleRound = (idx: number) => setOpenRounds(prev => ({ ...prev, [idx]: !prev[idx] }));
-
-  const roundLogsData = data.result?.round_logs || data.round_logs;
-  const logEntries: any[] = Array.isArray(roundLogsData)
-    ? roundLogsData
-    : roundLogsData ? Object.values(roundLogsData) : [];
-
-  const allEvents: any[] = [];
-  logEntries.forEach((r: any, roundIdx: number) => {
-    (Array.isArray(r?.sample_posts) ? r.sample_posts : []).forEach((p: any, pi: number) => {
-      allEvents.push({ agent: p.agent || p.agent_name || "Agent", platform: p.platform || "", action: p.action || p.action_type || "POST", content: p.content || p.text || p.result?.content || "", outcome: p.outcome || p.stance || "", round: roundIdx, idx: pi });
-    });
-  });
-
-  const totalEvents = allEvents.length;
-  const totalYes = logEntries.reduce((s: number, r: any) => s + (r?.yes || 0), 0);
-  const totalNo  = logEntries.reduce((s: number, r: any) => s + (r?.no  || 0), 0);
-
-  const hemloPct = (() => {
-    if (data.result?.primary_probability != null) return Math.round(data.result.primary_probability);
-    if (data.primary_probability != null) return Math.round(data.primary_probability);
-    if (data.result?.bullish_pct != null) return Math.round(data.result.bullish_pct);
-    if (data.result?.final_probability != null) return Math.round(data.result.final_probability * 100);
-    if (totalYes + totalNo > 0) return Math.round((totalYes / (totalYes + totalNo)) * 100);
-    return null;
-  })();
-
-  // Derive the actual market option names from whichever data source is available.
-  // Priority: Polymarket probabilityModel keys → explicit options array → "Yes"/"No" default
-  const outcomeLabels: [string, string] = (() => {
-    // 1. Polymarket/Kalshi path: analysis_data has probabilityModel with real option keys
-    const probModel = data.analysis_data?.probabilityModel || data.result?.probabilityModel;
-    if (probModel?.hemloModel) {
-      const keys = Object.keys(probModel.hemloModel);
-      if (keys.length >= 2) return [keys[0], keys[1]] as [string, string];
-      if (keys.length === 1) return [keys[0], `Not ${keys[0]}`] as [string, string];
-    }
-    if (probModel?.predictionMarket) {
-      const keys = Object.keys(probModel.predictionMarket);
-      if (keys.length >= 2) return [keys[0], keys[1]] as [string, string];
-      if (keys.length === 1) return [keys[0], `Not ${keys[0]}`] as [string, string];
-    }
-    // 2. Explicit options array saved on the simulation record
-    const opts = data.result?.options || data.options;
-    if (Array.isArray(opts) && opts.length >= 2) return [opts[0], opts[1]] as [string, string];
-    if (Array.isArray(opts) && opts.length === 1) return [opts[0], `Not ${opts[0]}`] as [string, string];
-    // 3. Default binary Yes / No
-    return ["Yes", "No"];
-  })();
-
-  const rawHemloModel =
-    data.result?.outcome_probabilities ||
-    data.result?.probabilityModel?.hemloModel ||
-    data.analysis_data?.probabilityModel?.hemloModel;
-
-  const explicitOptions = data.result?.options || data.options;
-  const explicitOptionLabels: string[] = Array.isArray(explicitOptions)
-    ? explicitOptions
-        .map((option: any) => typeof option === "string" ? option : String(option?.label || option?.name || "").trim())
-        .filter(Boolean)
-    : [];
-  const outcomeEntries: Array<{ label: string; pct: number }> = (() => {
-    if (rawHemloModel && typeof rawHemloModel === "object") {
-      const entries = Object.entries(rawHemloModel)
-        .map(([label, value]) => ({ label, pct: Math.round(Number(value) || 0) }))
-        .filter((entry) => entry.label);
-      const modelTotal = entries.reduce((sum, entry) => sum + entry.pct, 0);
-      if (entries.length >= 2 && modelTotal > 0) return entries;
-    }
-
-    if (explicitOptionLabels.length > 2) {
-      const counts: Record<string, number> = {};
-      logEntries.forEach((r: any) => {
-        const roundCounts = r?.outcome_counts || {};
-        Object.entries(roundCounts).forEach(([label, count]) => {
-          counts[label] = (counts[label] || 0) + Number(count || 0);
-        });
-      });
-      allEvents.forEach((event: any) => {
-        if (event.outcome && counts[event.outcome] === undefined) counts[event.outcome] = 0;
-      });
-      const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
-      if (total > 0) {
-        return explicitOptionLabels.map((label: string) => ({
-          label,
-          pct: Math.round(((counts[label] || 0) / total) * 100),
-        }));
-      }
-
-      // Transitional fallback for old saved runs: options were saved, but Modal still
-      // returned binary YES/NO logs. Keep percentages aligned with the visible volume.
-      const binaryTotal = totalYes + totalNo;
-      if (binaryTotal > 0) {
-        return explicitOptionLabels.map((label: string, i: number) => ({
-          label,
-          pct: i === 0 ? Math.round((totalYes / binaryTotal) * 100) : i === 1 ? Math.round((totalNo / binaryTotal) * 100) : 0,
-        }));
-      }
-
-      return explicitOptionLabels.map((label: string) => ({
-        label,
-        pct: 0,
-      }));
-    }
-
-    return [
-      { label: outcomeLabels[0], pct: hemloPct !== null ? Math.round(hemloPct) : 0 },
-      { label: outcomeLabels[1], pct: hemloPct !== null ? 100 - Math.round(hemloPct) : 0 },
-    ];
-  })();
-
-  const outcomeVoteTotals: Record<string, number> = {};
-  logEntries.forEach((r: any) => {
-    const roundCounts = r?.outcome_counts || {};
-    Object.entries(roundCounts).forEach(([label, count]) => {
-      outcomeVoteTotals[label] = (outcomeVoteTotals[label] || 0) + Number(count || 0);
-    });
-  });
-  if (Object.keys(outcomeVoteTotals).length === 0 && totalYes + totalNo > 0) {
-    outcomeVoteTotals[outcomeEntries[0]?.label || "Yes"] = totalYes;
-    outcomeVoteTotals[outcomeEntries[1]?.label || "No"] = totalNo;
+function MiniMarketChart({ history, loading, light = false }: { history: HistoryPoint[]; loading: boolean; light?: boolean }) {
+  if (loading) {
+    return (
+      <div className={`flex h-[190px] items-center justify-center rounded-xl border ${light ? "border-black/10 bg-black/[0.035]" : "border-white/10 bg-white/[0.035]"}`}>
+        <Loader2 className={`animate-spin ${light ? "text-zinc-500" : "text-zinc-500"}`} size={24} />
+      </div>
+    );
   }
-  const totalOutcomeVotes = Object.values(outcomeVoteTotals).reduce((sum, count) => sum + count, 0);
-  const outcomePalette = ["#34d399", "#fb7185", "#60a5fa", "#fbbf24", "#c084fc", "#f472b6", "#2dd4bf", "#a3e635"];
 
-  const reportText: string = data.result?.report_text || data.report_text || data.result?.report?.report_text || data.result?.markdown_content || "";
+  if (history.length < 2) {
+    return (
+      <div className={`flex h-[190px] flex-col items-center justify-center gap-3 rounded-xl border ${light ? "border-black/10 bg-black/[0.035] text-zinc-500" : "border-white/10 bg-white/[0.035] text-zinc-500"}`}>
+        <BarChart3 size={34} />
+        <span className="font-semibold text-heading-lg" style={{ fontSize: 12 }}>No price history yet</span>
+      </div>
+    );
+  }
 
-  const getInitials = (name: string) => {
-    const p = (name || "A").trim().split(/\s+/);
-    return p.length > 1 ? (p[0][0] + p[1][0]).toUpperCase() : (name[0] || "A").toUpperCase();
-  };
-
-  // Extract Market Metrics if available, otherwise default fallbacks
-  const marketStats = (() => {
-    // 1. Check if market stats were packed into the domain string (e.g. "polymarket|0x123|vol|liq|last")
-    const dStr = data.domain || "";
-    if (dStr.includes("|")) {
-      const parts = dStr.split("|");
-      if (parts.length >= 6) {
-        return {
-          volume: parts[2],
-          liquidity: parts[3] === "0" ? "Unknown" : parts[3],
-          lastTrade: parts[4] === "0" ? "Unknown" : `$${parts[4]}`,
-          timeLeft: "Live",
-          image: parts.slice(5).join("|") || ""
-        };
-      }
-      if (parts.length >= 5) {
-        return {
-          volume: parts[2],
-          liquidity: parts[3] === "0" ? "Unknown" : parts[3],
-          lastTrade: parts[4] === "0" ? "Unknown" : `$${parts[4]}`,
-          timeLeft: "Live"
-        };
-      }
-    }
-    
-    // 2. Fallback to analysis_data or default fallbacks
-    const mkt = data.analysis_data?.predictionMarket || data.result?.marketInfo || {};
-    return {
-      volume: mkt.volume !== undefined ? `$${Number(mkt.volume).toLocaleString()}` : "$2.4M",
-      liquidity: mkt.liquidity !== undefined ? `$${Number(mkt.liquidity).toLocaleString()}` : "$485K",
-      lastTrade: mkt.lastTrade || "Just now",
-      timeLeft: mkt.endDate ? new Date(mkt.endDate).toLocaleDateString() : "3 days"
-    };
-  })();
-
-
-
-  // Hydration-safe date formatting
-  const [dateStr, setDateStr] = useState<string>("");
-  useEffect(() => {
-    if (data.created_at) setDateStr(new Date(data.created_at).toLocaleString());
-  }, [data.created_at]);
-
-  const topOutcomeEntry = outcomeEntries.reduce(
-    (best, entry) => (entry.pct > best.pct ? entry : best),
-    outcomeEntries[0] || { label: "Outcome", pct: hemloPct ?? 0 }
-  );
-  const maxOutcomePct = Math.max(1, ...outcomeEntries.map((entry) => Math.max(0, Number(entry.pct) || 0)));
-  const confidenceTone =
-    backendConfidence === "HIGH"
-      ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
-      : backendConfidence === "LOW"
-        ? "border-rose-400/25 bg-rose-400/10 text-rose-200"
-        : "border-sky-400/25 bg-sky-400/10 text-sky-200";
-  const timingSteps = Object.entries(stepTiming).filter(([key]) => key !== "total");
-  const timingLabels: Record<string, string> = {
-    init: "Init",
-    ontology: "Ontology",
-    graph_build: "Graph",
-    agents: "Agents",
-    config: "Config",
-    simulation: "Rounds",
-    verdict: "Verdict",
-  };
-  const marketInfo = data.result?.marketInfo || data.analysis_data?.predictionMarket || {};
-  const marketImage = marketStats.image || marketInfo.image || marketInfo.icon || "";
-  const hasPolymarketPanel = baseDomain.toLowerCase() === "polymarket" && marketSlug;
-  const visibleFactors = keyFactors.slice(0, 5);
-  const visiblePersonas = personaHighlights.slice(0, 4);
-  const visibleAgents = agentList.slice(0, 10);
+  const width = 420;
+  const height = 160;
+  const prices = history.map((point) => toPct(point.p, 0) || 0);
+  const min = Math.max(0, Math.min(...prices) - 5);
+  const max = Math.min(100, Math.max(...prices) + 5);
+  const range = max - min || 1;
+  const points = prices.map((price, index) => {
+    const x = (index / Math.max(1, prices.length - 1)) * width;
+    const y = height - ((price - min) / range) * height;
+    return [x, y];
+  });
+  const path = points.map(([x, y], index) => `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const area = `${path} L${width},${height} L0,${height} Z`;
+  const last = prices[prices.length - 1];
+  const first = prices[0];
+  const chartColor = last >= first ? "#38e88d" : "#fb7185";
 
   return (
-    <div className="min-h-screen bg-[#070807] text-zinc-100 font-sans selection:bg-emerald-500/30 overflow-x-hidden pt-8 pb-12">
-      <div className="w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+    <div className={`rounded-xl border p-4 ${light ? "border-black/10 bg-black/[0.025]" : "border-white/10 bg-white/[0.035]"}`}>
+      <div className="mb-3 flex items-center justify-between">
+        <span className="font-semibold text-heading-lg" style={{ color: light ? "#6b7280" : "#71717a", fontSize: 11 }}>7 day price</span>
+        <span className="font-semibold text-heading-2xl text-[28px]" style={{ color: chartColor }}>{last}%</span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-[150px] w-full" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="resultChartGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={chartColor} stopOpacity="0.28" />
+            <stop offset="100%" stopColor={chartColor} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill="url(#resultChartGradient)" />
+        <path d={path} fill="none" stroke={chartColor} strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
+        <circle cx={points[points.length - 1][0]} cy={points[points.length - 1][1]} r="4" fill={chartColor} />
+      </svg>
+    </div>
+  );
+}
 
-          {/* ── LEFT COLUMN (~66%) ──────────────────────────────────────── */}
-          <div className="lg:col-span-8 flex flex-col gap-5 min-w-0">
+export default function SimulationResultInteractive({ initialData }: { initialData: SimulationPayload }) {
+  const data = initialData;
+  const result = useMemo(() => data.result || {}, [data.result]);
+  const domainMeta = useMemo(() => parseDomainMeta(data.domain || ""), [data.domain]);
+  const marketInfo = useMemo(
+    () => result.marketInfo || result.market_info || data.analysis_data?.predictionMarket || {},
+    [data.analysis_data?.predictionMarket, result],
+  );
+  const source = String(marketInfo.source || domainMeta.source || "simulation").toLowerCase();
+  const label = sourceLabel(source);
+  const marketLookupCandidates = useMemo(
+    () => {
+      const textCandidates = [
+        String(marketInfo.slug || ""),
+        String(marketInfo.eventSlug || marketInfo.event_slug || ""),
+        String(data.scenario || ""),
+      ].filter((candidate) => candidate && !/^\d+$/.test(candidate));
+      const numericCandidates = [
+        String(marketInfo.id || ""),
+        String(domainMeta.marketId || ""),
+      ].filter((candidate) => /^\d+$/.test(candidate));
+      return uniqueLabels([...textCandidates, ...numericCandidates]);
+    },
+    [data.scenario, domainMeta.marketId, marketInfo],
+  );
+  const marketLookup = marketLookupCandidates[0] || "";
+  const isPolymarket = source === "polymarket";
 
-            {/* Question Header */}
-            <motion.div initial={{opacity:0, y:16}} animate={{opacity:1, y:0}}>
-              <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-5 mb-4 bg-[#101310]/90 border border-white/10 p-5 sm:p-6 rounded-lg shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
-                {marketStats.image && (
-                  <img src={marketStats.image} alt="" className="w-16 h-16 sm:w-20 sm:h-20 rounded-lg object-cover border border-white/10 shrink-0 shadow-sm" onError={e => e.currentTarget.style.display = 'none'} />
-                )}
-                <div className="flex flex-col gap-4 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
-                    <span className="rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1 text-zinc-300">{baseDomain || "simulation"}</span>
-                    <span>{dateStr || "Loading date..."}</span>
+  const dateStr = useMemo(() => formatDateTime(data.created_at), [data.created_at]);
+  const [liveMarketData, setLiveMarketData] = useState<any>(null);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [chartHistory, setChartHistory] = useState<HistoryPoint[]>([]);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [orderBook, setOrderBook] = useState<{ bids: OrderBookLevel[]; asks: OrderBookLevel[] }>({ bids: [], asks: [] });
+  const [recentTrades, setRecentTrades] = useState<TradePoint[]>([]);
+  const [similarMarkets, setSimilarMarkets] = useState<SimilarMarket[]>([]);
+
+  const outcomeRows = useMemo<OutcomeRow[]>(() => {
+    const probabilityModel = result.probabilityModel || data.analysis_data?.probabilityModel || {};
+    const hemloModel = result.outcome_probabilities || result.outcomeProbabilities || probabilityModel.hemloModel || {};
+    const marketModel = probabilityModel.predictionMarket || {};
+    const resultOutcomes = Array.isArray(result.market_outcomes) ? result.market_outcomes : [];
+    const infoOutcomes = Array.isArray(marketInfo.outcomes) ? marketInfo.outcomes : [];
+    const liveRootOutcomes = Array.isArray(liveMarketData?.outcomes) ? liveMarketData.outcomes : [];
+    const liveMarketOutcomes = Array.isArray(liveMarketData?.markets)
+      ? liveMarketData.markets.filter((market: any) => market?.active !== false && !market?.closed).flatMap((market: any) => {
+          if (market?.groupItemTitle) {
+            const option = Array.isArray(market.outcomes) ? market.outcomes[0] : null;
+            return [{
+              label: market.groupItemTitle,
+              prob: option?.prob ?? market.lastTradePrice,
+              image: market.image || market.icon,
+              icon: market.icon || market.image,
+              tokenId: market.clobTokenIds?.[0],
+              clobTokenId: market.clobTokenIds?.[0],
+            }];
+          }
+          return Array.isArray(market?.outcomes)
+            ? market.outcomes.map((outcome: any, index: number) => ({
+                ...outcome,
+                image: outcome?.image || outcome?.icon || market.image || market.icon,
+                icon: outcome?.icon || outcome?.image || market.icon || market.image,
+                tokenId: outcome?.tokenId || outcome?.clobTokenId || market.clobTokenIds?.[index],
+                clobTokenId: outcome?.clobTokenId || outcome?.tokenId || market.clobTokenIds?.[index],
+              }))
+            : [];
+        })
+      : [];
+    const liveOutcomes = [...liveRootOutcomes, ...liveMarketOutcomes];
+    const marketOutcomes = resultOutcomes.length ? resultOutcomes : infoOutcomes;
+    const explicitOptions = Array.isArray(result.options)
+      ? result.options
+      : Array.isArray(data.options)
+        ? data.options
+        : [];
+
+    const byLabel = new Map<string, any>();
+    [...marketOutcomes, ...infoOutcomes, ...liveOutcomes].forEach((outcome: any) => {
+      const key = normalizeKey(outcome?.label || outcome?.name || outcome);
+      if (!key) return;
+      const existing = byLabel.get(key) || {};
+      byLabel.set(key, {
+        ...outcome,
+        ...existing,
+        image: existing.image || outcome?.image || outcome?.icon,
+        icon: existing.icon || outcome?.icon || outcome?.image,
+        tokenId: existing.tokenId || existing.clobTokenId || outcome?.tokenId || outcome?.clobTokenId,
+        clobTokenId: existing.clobTokenId || existing.tokenId || outcome?.clobTokenId || outcome?.tokenId,
+      });
+    });
+
+    const labels = uniqueLabels([
+      ...Object.keys(hemloModel || {}),
+      ...marketOutcomes.map((outcome: any) => String(outcome?.label || outcome?.name || "").trim()),
+      ...liveOutcomes.map((outcome: any) => String(outcome?.label || outcome?.name || "").trim()),
+      ...Object.keys(marketModel || {}),
+      ...explicitOptions.map((option: any) => typeof option === "string" ? option : String(option?.label || option?.name || "").trim()),
+    ]);
+
+    const finalLabels = labels.length >= 2 ? labels : ["Yes", "No"];
+    const primaryHemlo = toPct(data.primary_probability ?? result.primary_probability ?? result.top_probability, null);
+    const primaryMarket = toPct(marketInfo.crowdOdds ?? marketInfo.polymarketOdds ?? marketOutcomes[0]?.prob, null);
+
+    return finalLabels.slice(0, 12).map((name, index) => {
+      const saved = byLabel.get(normalizeKey(name)) || {};
+      const hemloPct =
+        toPct(hemloModel?.[name], null) ??
+        (index === 0 ? primaryHemlo : finalLabels.length === 2 && primaryHemlo !== null ? 100 - primaryHemlo : null);
+      const marketPct =
+        toPct(saved?.prob, null) ??
+        toPct(marketModel?.[name], null) ??
+        (index === 0 ? primaryMarket : finalLabels.length === 2 && primaryMarket !== null ? 100 - primaryMarket : null);
+
+      return {
+        label: name,
+        marketPct,
+        hemloPct,
+        image: saved?.image || saved?.icon,
+        icon: saved?.icon || saved?.image,
+        tokenId: saved?.tokenId || saved?.clobTokenId,
+        clobTokenId: saved?.clobTokenId || saved?.tokenId,
+      };
+    });
+  }, [data.analysis_data, data.options, data.primary_probability, liveMarketData, marketInfo, result]);
+
+  useEffect(() => {
+    if (!isPolymarket || marketLookupCandidates.length === 0) return;
+    let cancelled = false;
+    setMarketLoading(true);
+
+    async function loadMarket() {
+      for (const candidate of marketLookupCandidates) {
+        try {
+          const res = await fetch(`/api/polymarket-market?slug=${encodeURIComponent(candidate)}`);
+          const payload = await res.json();
+          if (!payload?.error) {
+            if (!cancelled) setLiveMarketData(payload);
+            return;
+          }
+        } catch {
+          // Try the next available identifier.
+        }
+      }
+      if (!cancelled) setLiveMarketData(null);
+    }
+
+    loadMarket()
+      .catch(() => {
+        if (!cancelled) setLiveMarketData(null);
+      })
+      .finally(() => {
+        if (!cancelled) setMarketLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isPolymarket, marketLookupCandidates]);
+
+  const liveMarket = Array.isArray(liveMarketData?.markets) ? liveMarketData.markets[0] : null;
+  const chartToken =
+    outcomeRows.find((row) => row.tokenId || row.clobTokenId)?.tokenId ||
+    outcomeRows.find((row) => row.tokenId || row.clobTokenId)?.clobTokenId ||
+    liveMarket?.clobTokenIds?.[0] ||
+    "";
+  const marketTitle = liveMarketData?.title || marketInfo.title || data.scenario;
+  const marketImage = liveMarketData?.image || marketInfo.image || marketInfo.icon || domainMeta.image || sourceIcon(source);
+  const currentCategory = liveMarketData?.category || marketInfo.category || marketInfo.tag || marketInfo.tags?.[0]?.label || "";
+
+  useEffect(() => {
+    if (!chartToken) {
+      setChartHistory([]);
+      return;
+    }
+    let cancelled = false;
+    setChartLoading(true);
+    fetch(`/api/polymarket-history?tokenId=${encodeURIComponent(chartToken)}&interval=1w&fidelity=60`)
+      .then((res) => res.json())
+      .then((payload) => {
+        if (!cancelled) setChartHistory(Array.isArray(payload.history) ? payload.history : []);
+      })
+      .catch(() => {
+        if (!cancelled) setChartHistory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setChartLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chartToken]);
+
+  useEffect(() => {
+    if (!chartToken || !isPolymarket) {
+      setOrderBook({ bids: [], asks: [] });
+      setRecentTrades([]);
+      return;
+    }
+    let cancelled = false;
+
+    Promise.all([
+      fetch(`/api/polymarket-orderbook?tokenId=${encodeURIComponent(chartToken)}`).then((res) => res.json()).catch(() => null),
+      fetch(`/api/polymarket-trades?tokenId=${encodeURIComponent(chartToken)}`).then((res) => res.json()).catch(() => null),
+    ]).then(([book, trades]) => {
+      if (cancelled) return;
+      setOrderBook({
+        bids: Array.isArray(book?.bids) ? book.bids : [],
+        asks: Array.isArray(book?.asks) ? book.asks : [],
+      });
+      setRecentTrades(Array.isArray(trades?.trades) ? trades.trades : []);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chartToken, isPolymarket]);
+
+  useEffect(() => {
+    const query = marketTitle.replace(/[^\w\s$.-]/g, " ").replace(/\s+/g, " ").trim();
+    const topicQuery = compactQuery(query) || query;
+    if (query.length < 3 && topicQuery.length < 3) return;
+    let cancelled = false;
+
+    async function loadSimilarMarkets() {
+      const categoryKey = categoryKeyFor(`${currentCategory} ${marketTitle}`);
+      const outcomeQuery = outcomeRows
+        .map((row) => row.label)
+        .filter((name) => !/^(yes|no|other)$/i.test(name))
+        .slice(0, 3)
+        .join(" ");
+      const endpoints = source === "kalshi"
+        ? uniqueLabels([
+            `/api/kalshi-markets?q=${encodeURIComponent(topicQuery)}`,
+            outcomeQuery ? `/api/kalshi-markets?q=${encodeURIComponent(outcomeQuery)}` : "",
+            categoryKey ? `/api/kalshi-markets?category=${encodeURIComponent(categoryKey)}` : "",
+            "/api/kalshi-markets?category=trending",
+          ])
+        : uniqueLabels([
+            `/api/polymarket-browse?q=${encodeURIComponent(topicQuery)}&limit=24`,
+            outcomeQuery ? `/api/polymarket-browse?q=${encodeURIComponent(outcomeQuery)}&limit=16` : "",
+            categoryKey ? `/api/polymarket-browse?category=${encodeURIComponent(categoryKey)}&limit=24` : "",
+            "/api/polymarket-browse?category=trending&limit=24",
+          ]);
+
+      const pages = await Promise.all(
+        endpoints.map((endpoint) => fetch(endpoint).then((res) => res.json()).catch(() => null)),
+      );
+      const rawMarkets = pages.flatMap((page) => Array.isArray(page?.markets) ? page.markets : []);
+
+      const currentKey = normalizeKey(marketTitle);
+      const currentId = normalizeKey(String(marketInfo.id || domainMeta.marketId || liveMarketData?.slug || ""));
+      const titleTokens = new Set(topicTokens(marketTitle));
+      const outcomeTokens = new Set(outcomeRows.flatMap((row) => topicTokens(row.label)));
+      const scoreMarket = (market: SimilarMarket) => {
+        const marketTokens = topicTokens(`${market.title} ${market.category || ""}`);
+        const overlap = marketTokens.reduce((sum, token) => sum + (titleTokens.has(token) ? 3 : outcomeTokens.has(token) ? 2 : 0), 0);
+        const sameCategory = categoryKeyFor(`${market.category} ${market.title}`) === categoryKey && categoryKey ? 5 : 0;
+        return overlap + sameCategory;
+      };
+
+      const mapped = rawMarkets
+        .map((market: any): SimilarMarket => ({
+          id: String(market.id || market.slug || market.event_ticker || market.title || market.question || ""),
+          title: String(market.title || market.question || "Prediction market"),
+          source: source === "kalshi" ? "Kalshi" : "Polymarket",
+          category: String(market.category || ""),
+          image: String(market.image || market.icon || sourceIcon(source)),
+          icon: String(market.icon || market.image || sourceIcon(source)),
+          volume: String(market.volume || ""),
+          volumeRaw: Number(market.volumeRaw || 0),
+          endDate: market.endDate ? String(market.endDate) : undefined,
+          link: String(market.link || (market.slug ? `https://polymarket.com/event/${market.slug}` : "")),
+          outcomes: Array.isArray(market.outcomes)
+            ? market.outcomes.slice(0, 3).map((outcome: any) => ({
+                label: String(outcome.label || outcome.name || ""),
+                prob: outcome.prob,
+                image: outcome.image || outcome.icon,
+                icon: outcome.icon || outcome.image,
+              }))
+            : [],
+        }))
+        .filter((market: SimilarMarket) => {
+          const marketKey = normalizeKey(market.title);
+          const idKey = normalizeKey(market.id);
+          return market.id && marketKey !== currentKey && (!currentId || idKey !== currentId);
+        });
+      const seen = new Set<string>();
+      const related = mapped
+        .filter((market) => {
+          const key = normalizeKey(`${market.id}:${market.title}`);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .map((market) => ({ market, score: scoreMarket(market) }))
+        .sort((a, b) => (b.score - a.score) || ((b.market.volumeRaw || 0) - (a.market.volumeRaw || 0)))
+        .map(({ market }) => market)
+        .slice(0, 8);
+
+      if (!cancelled) setSimilarMarkets(related);
+    }
+
+    loadSimilarMarkets().catch(() => {
+      if (!cancelled) setSimilarMarkets([]);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentCategory, domainMeta.marketId, liveMarketData?.slug, marketInfo.id, marketTitle, outcomeRows, source]);
+
+  const visibleFactors: string[] = Array.isArray(result.key_factors)
+    ? result.key_factors
+    : Array.isArray(result.keyFactors)
+      ? result.keyFactors
+      : [];
+  const notablePeople = Array.isArray(result.persona_highlights) && result.persona_highlights.length
+    ? result.persona_highlights
+    : Array.isArray(result.agents)
+      ? result.agents.slice(0, 4).map((agent: any) => ({
+          name: agent.name || "Agent",
+          role: agent.type || agent.profession || "Simulation agent",
+          stance: agent.stance || "",
+          impact: agent.bio || agent.persona || "Participated in the simulation.",
+        }))
+      : [];
+  const confidence = String(result.confidence || "").toUpperCase();
+  const verdict = result.verdict || result.tldr || result.report_summary || "";
+  const topOutcome = outcomeRows.reduce(
+    (best, row) => ((row.hemloPct ?? -1) > (best.hemloPct ?? -1) ? row : best),
+    outcomeRows[0],
+  );
+  const confidenceTone =
+    confidence === "HIGH" ? "#38e88d" : confidence === "LOW" ? "#fb7185" : "#7db7ff";
+  const eventVolume = liveMarketData?.volume || liveMarket?.volumeRaw || liveMarket?.volume || marketInfo.volume || domainMeta.volume;
+  const eventLiquidity = liveMarketData?.liquidity || liveMarket?.liquidity || marketInfo.liquidity || domainMeta.liquidity;
+  const bestBid = orderBook.bids[0]?.price;
+  const bestAsk = orderBook.asks[0]?.price;
+  const liveSpread = bestBid && bestAsk ? Math.max(0, bestAsk - bestBid) : liveMarket?.spread;
+  const latestTrade = recentTrades[0]?.price;
+  const metricVolume = formatMoney(eventVolume);
+  const metricVolume24h = formatMoney(liveMarketData?.volume24h || liveMarket?.volume24h);
+  const metricLiquidity = formatMoney(eventLiquidity);
+  const metricBid = formatLivePrice(bestBid || liveMarket?.bestBid || marketInfo.bestBid || marketInfo.bid);
+  const metricAsk = formatLivePrice(bestAsk || liveMarket?.bestAsk || marketInfo.bestAsk || marketInfo.ask);
+  const metricLast = formatLivePrice(latestTrade || liveMarket?.lastTradePrice || marketInfo.lastTradePrice || domainMeta.last);
+  const metricSpread = formatLivePrice(liveSpread);
+  const metricChange = formatSignedPrice(liveMarket?.oneDayPriceChange);
+  const metricEndDate = formatDate(liveMarketData?.endDate || liveMarket?.endDate || marketInfo.endDate);
+  const metricStatus = liveMarketData?.closed || liveMarket?.closed ? "Closed" : liveMarketData?.active === false || liveMarket?.active === false ? "Inactive" : "Active";
+  const marketUrl = isPolymarket && (liveMarketData?.slug || marketLookup)
+    ? `https://polymarket.com/event/${liveMarketData?.slug || marketLookup}`
+    : "";
+
+  return (
+    <main className="min-h-screen bg-[#05070b] py-8 text-white">
+      <style>{`
+        .result-main-scroll {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+        .result-main-scroll::-webkit-scrollbar {
+          display: none;
+        }
+      `}</style>
+      <div
+        className="flex flex-col gap-6"
+        style={{
+          width: "min(calc(100vw - 48px), 1360px)",
+          marginInline: "auto",
+        }}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Link href="/simulate/mirofish" className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-4 py-2 text-sm font-bold text-zinc-300 transition hover:bg-white/[0.07]">
+            <ArrowLeft size={16} />
+            Back to simulate
+          </Link>
+          <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-zinc-500">
+            <span style={{ color: confidenceTone }}>{confidence || "MEDIUM"}</span>
+            confidence
+          </div>
+        </div>
+
+        <section className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.62fr)_minmax(340px,0.78fr)]">
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="result-main-scroll flex overflow-y-auto rounded-[22px] border border-[#25303a] bg-[#13191f] shadow-[0_18px_60px_rgba(0,0,0,0.42)]"
+            style={{
+              flexDirection: "column",
+              height: "clamp(640px, calc(100vh - 120px), 760px)",
+            }}
+          >
+            <div className="border-b border-[#25303a] p-5 sm:p-7">
+              <div className="flex items-start gap-4">
+                <img src={marketImage} alt="" className="h-16 w-16 shrink-0 rounded-2xl bg-[#202a33] object-cover ring-1 ring-white/10" onError={(e) => { e.currentTarget.src = sourceIcon(source); }} />
+                <div className="min-w-0">
+                  <div className="mb-2 text-xs font-black uppercase tracking-[0.16em] text-[#718093]">
+                    {label} result {dateStr ? <span className="text-[#4f6072]">/ {dateStr}</span> : null}
                   </div>
-                  <h1 className="text-2xl md:text-3xl xl:text-4xl font-black leading-[1.08] tracking-tight text-white pb-1">
-                    &ldquo;{data.scenario}&rdquo;
-                  </h1>
-                  <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-end">
-                    <div>
-                      {backendConfidence && (
-                        <span className={`inline-flex items-center border rounded-md px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] ${confidenceTone}`}>
-                          {backendConfidence} confidence
-                        </span>
-                      )}
-                      <p className="mt-3 max-w-3xl text-sm md:text-[15px] leading-7 text-zinc-300">
-                        {verdictLoading ? "Synthesizing consensus..." : verdict || backendVerdict || "Verdict will appear once the simulation report is available."}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 md:min-w-[160px]">
-                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-200/70">Leading</div>
-                      <div className="mt-1 truncate text-sm font-black text-emerald-100">{topOutcomeEntry.label}</div>
-                      <div className="text-3xl font-black tracking-tight text-emerald-300">{Math.round(topOutcomeEntry.pct || 0)}%</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-                <Link href="/history" className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-zinc-300 transition hover:border-white/20 hover:bg-white/[0.06]">
-                  <ArrowLeft size={14} /> History
-                </Link>
-                {hasPolymarketPanel && (
-                  <button
-                    onClick={() => setShowPolymarket(!showPolymarket)}
-                    className="inline-flex items-center gap-2 rounded-md border border-sky-400/20 bg-sky-400/10 px-3 py-2 text-sky-200 transition hover:bg-sky-400/15"
+                  <h1
+                    className="font-semibold text-heading-lg text-text-primary"
+                    style={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
                   >
-                    <ExternalLink size={14} /> {showPolymarket ? "Hide Market" : "Market Data"}
-                  </button>
+                    {marketTitle}
+                  </h1>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-1 flex-col gap-5 p-5 sm:p-7">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-black uppercase tracking-[0.18em] text-[#718093]">Hemlo vs {label}</div>
+                  <div className="mt-1 font-semibold text-heading-lg text-text-primary">Outcome comparison</div>
+                </div>
+                {topOutcome && (
+                  <div className="border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-right">
+                    <div className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-200/70">Hemlo leader</div>
+                    <div className="font-semibold text-heading-lg text-emerald-200">{topOutcome.label} {topOutcome.hemloPct ?? "--"}%</div>
+                  </div>
                 )}
               </div>
-            </motion.div>
 
-            {/* ① Probability Spread (Moved from Right Column) */}
-            <motion.div initial={{opacity:0, y:16}} animate={{opacity:1, y:0}} transition={{delay:0.1}} className="rounded-lg border border-white/10 bg-[#0d100f]/90 p-5 sm:p-6 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-                <div>
-                  <div className="text-[11px] font-bold tracking-[0.18em] text-zinc-500 uppercase">Hemlo Probability</div>
-                  <div className="mt-1 text-sm text-zinc-400">{totalEvents} agent actions across {logEntries.length} rounds</div>
+              <div className="grid flex-1 border border-white/10 bg-[#13191f]" style={{ gridTemplateRows: "auto minmax(0, 1fr)" }}>
+                <div className="grid grid-cols-[minmax(0,1fr)_84px_84px] gap-4 border-b border-white/8 px-5 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-zinc-500 sm:grid-cols-[minmax(0,1fr)_118px_118px] sm:px-6">
+                  <span>Outcome</span>
+                  <span className="pr-1 text-right">{label}</span>
+                  <span className="pr-1 text-right">Hemlo</span>
                 </div>
-                <div className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-right">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">Votes</div>
-                  <div className="text-lg font-black text-white">{totalOutcomeVotes || totalEvents}</div>
-                </div>
-              </div>
-
-              {outcomeEntries.map((entry, i) => {
-                const color = outcomePalette[i % outcomePalette.length];
-                const pct = Math.max(0, Math.min(100, Math.round(entry.pct || 0)));
-                return (
-                  <div key={`${entry.label}-${i}`} className="mb-3 rounded-lg border border-white/8 bg-white/[0.025] px-4 py-3 last:mb-0">
-                    <div className="flex justify-between items-center gap-4 mb-2">
-                      <span className="text-sm font-bold truncate text-zinc-100">
-                        {entry.label}
-                      </span>
-                      <span
-                        className="text-xl sm:text-2xl font-black tracking-tight"
-                        style={{
-                          color,
-                          textShadow: `0 0 16px ${color}80`,
-                        }}
-                      >
-                        {hemloPct !== null || rawHemloModel ? `${pct}%` : "—"}
-                      </span>
-                    </div>
-                    <div className="h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.max(3, (pct / maxOutcomePct) * 100)}%` }}
-                        transition={{ duration: 1.0, ease: "easeOut", delay: i * 0.05 }}
-                        className="h-full"
-                        style={{ background: `linear-gradient(90deg, ${color}99, ${color})`, boxShadow: `0 0 10px ${color}66` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Agent Volume Bar — BIG */}
-              <div className="mt-4 rounded-lg border border-white/8 bg-black/20 p-4">
-                <div className="text-[11px] font-bold tracking-[0.18em] text-zinc-500 uppercase mb-3">Agent Volume</div>
-                <div className="h-4 bg-black/40 rounded-md overflow-hidden flex border border-white/5 shadow-inner mb-3">
-                  {totalOutcomeVotes > 0 ? (
-                    outcomeEntries.map((entry, i) => {
-                      const count = outcomeVoteTotals[entry.label] || 0;
-                      const color = outcomePalette[i % outcomePalette.length];
-                      return (
-                        <motion.div
-                          key={`${entry.label}-volume`}
-                          initial={{ width: 0 }}
-                          animate={{ width: `${(count / totalOutcomeVotes) * 100}%` }}
-                          transition={{ duration: 1.2, ease: "easeOut", delay: i * 0.03 }}
-                          className="h-full"
-                          style={{ background: `linear-gradient(90deg, ${color}cc, ${color})` }}
-                        />
-                      );
-                    })
-                  ) : (
-                    <div className="w-full h-full bg-zinc-800 flex items-center justify-center">
-                      <span className="text-[10px] text-zinc-600 font-mono">No agent data yet</span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2 text-[12px] font-mono font-black">
-                  {outcomeEntries.map((entry, i) => {
-                    const color = outcomePalette[i % outcomePalette.length];
+                <div
+                  className="grid gap-2 bg-[#13191f] p-3"
+                  style={{
+                    gridTemplateRows: outcomeRows.length
+                      ? `repeat(${outcomeRows.length}, minmax(76px, 1fr))`
+                      : undefined,
+                  }}
+                >
+                  {outcomeRows.map((row, index) => {
+                    const image = row.icon || row.image;
+                    const delta = row.hemloPct !== null && row.marketPct !== null ? row.hemloPct - row.marketPct : null;
                     return (
-                      <span
-                        key={`${entry.label}-count`}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-md border"
-                        style={{ color, background: `${color}1f`, borderColor: `${color}40` }}
-                      >
-                        {i === 0 ? <TrendingUp size={13}/> : null}
-                        {outcomeVoteTotals[entry.label] || 0} {entry.label}
-                      </span>
+                      <div key={`${row.label}-${index}`} className="grid grid-cols-[minmax(0,1fr)_84px_84px] items-center gap-4 border border-white/8 bg-[#171d22] px-5 py-4 sm:grid-cols-[minmax(0,1fr)_118px_118px] sm:px-6">
+                        <div className="min-w-0">
+                          <div className="flex min-w-0 items-center gap-3">
+                            {image && <img src={image} alt="" className="h-9 w-9 shrink-0 rounded-lg bg-[#202a33] object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />}
+                            <div className="min-w-0">
+                              <div className="font-semibold text-heading-lg text-text-primary truncate">{row.label}</div>
+                              {delta !== null && (
+                                <div className="mt-1 text-[11px] font-bold" style={{ color: delta >= 0 ? "#38e88d" : "#fb7185" }}>
+                                  {delta >= 0 ? "+" : ""}{delta}% divergence
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="pr-1 text-right font-semibold text-heading-2xl text-[28px] text-[#dbe7f5]">{row.marketPct === null ? "--" : `${row.marketPct}%`}</div>
+                        <div className="pr-1 text-right font-semibold text-heading-2xl text-[28px] text-[#38e88d]">{row.hemloPct === null ? "--" : `${row.hemloPct}%`}</div>
+                      </div>
                     );
                   })}
                 </div>
               </div>
-            </motion.div>
 
-            {/* ── Key Factors ── */}
-            {visibleFactors.length > 0 && (
-              <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:0.18}} className="rounded-lg border border-white/10 bg-[#0d100f]/80 p-5">
-                <h2 className="text-lg font-black mb-4 flex items-center gap-3 tracking-tight">
-                  <span className="text-amber-400">⚡</span>
-                  Key Factors
-                </h2>
-                <div className="flex flex-col gap-2">
-                  {visibleFactors.map((f, i) => (
-                    <div key={i} className="flex items-start gap-3 rounded-md border border-white/5 bg-white/[0.025] px-4 py-3">
-                      <span className="text-amber-400 font-black text-sm shrink-0 mt-0.5">{i + 1}.</span>
-                      <span className="text-sm text-zinc-300 leading-relaxed">{f}</span>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-
-            {/* ── Notable Personas ── */}
-            {visiblePersonas.length > 0 && (
-              <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:0.22}} className="rounded-lg border border-white/10 bg-[#0d100f]/80 p-5">
-                <h2 className="text-lg font-black mb-4 flex items-center gap-3 tracking-tight">
-                  <span className="text-purple-400">👤</span>
-                  Notable Personas
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {visiblePersonas.map((p, i) => (
-                    <div key={i} className="rounded-md border border-white/5 bg-white/[0.025] px-4 py-4 flex items-start gap-4">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black shrink-0 shadow-lg ${
-                        p.stance === 'YES' || p.stance === outcomeEntries[0]?.label ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                      }`}>
-                        {(p.name || "?").split(" ").map((n:string) => n[0]).slice(0,2).join("").toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="text-sm font-bold text-white">{p.name}</span>
-                          <span className="text-[10px] font-bold tracking-widest uppercase text-zinc-500">{p.role}</span>
-                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-md tracking-widest ${
-                            p.stance === 'YES' || p.stance === outcomeEntries[0]?.label ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
-                          }`}>{p.stance}</span>
-                        </div>
-                        <p className="text-xs text-zinc-400 leading-relaxed">{p.impact}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-
-            {/* ── Agent List (collapsed) ── */}
-            {visibleAgents.length > 0 && (
-              <motion.div initial={{opacity:0,y:16}} animate={{opacity:1,y:0}} transition={{delay:0.24}} className="rounded-lg border border-white/10 bg-[#0d100f]/80 p-5">
-                <h2 className="text-lg font-black mb-4 flex items-center gap-3 tracking-tight">
-                  <span className="text-blue-400">🤖</span>
-                  Participating Agents ({agentList.length})
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {visibleAgents.map((a, i) => (
-                    <div key={i} className="rounded-md border border-white/5 bg-white/[0.025] px-3 py-2.5 flex items-center gap-3">
-                      <div className="w-7 h-7 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center text-[10px] font-black text-zinc-400 shrink-0">
-                        {(a.name || "?")[0].toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-zinc-300 truncate">{a.name}</div>
-                        <div className="text-[10px] text-zinc-600 font-mono uppercase tracking-wide">{a.type}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-
-            {/* Reasoning Engine */}
-            <motion.div initial={{opacity:0, x:-20}} animate={{opacity:1, x:0}} transition={{delay:0.15}} className="flex flex-col rounded-lg border border-white/10 bg-[#0d100f]/80 p-5">
-              <h2 className="text-lg font-black mb-4 flex items-center gap-3 tracking-tight">
-                <Terminal size={18} className="text-sky-300" />
-                Agent Evidence
-              </h2>
-
-              {/* Tab Bar */}
-              <div className="flex gap-2 mb-4 bg-black/25 p-1.5 rounded-lg w-fit border border-white/5 backdrop-blur-sm overflow-x-auto max-w-full sim-scroll">
-                {[
-                  { id: "timeline", label: "Agent Timeline" },
-                  { id: "stream", label: "Raw Event Stream" }
-                ].map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setActiveTab(t.id as any)}
-                    className={`px-5 sm:px-7 py-2 rounded-md text-sm font-bold tracking-wide transition-all duration-300 whitespace-nowrap ${
-                      activeTab === t.id
-                        ? 'bg-zinc-800 text-white shadow-md border border-white/10'
-                        : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5 border border-transparent'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Tab Content */}
-              <div className="rounded-lg border border-white/10 bg-[#080a09] overflow-hidden relative min-h-[440px] shadow-[0_18px_60px_rgba(0,0,0,0.24)]">
-
-                {/* Tab 2: Agent Timeline */}
-                {activeTab === "timeline" && (
-                  <div className="absolute inset-0 overflow-y-auto p-4 sm:p-5 sim-scroll bg-[#090c0b]">
-                    {logEntries.length === 0 && <div className="text-center text-zinc-600 mt-20 font-mono">No timeline events compiled.</div>}
-                    <div className="space-y-4">
-                      {logEntries.map((r: any, i: number) => {
-                        const isOpen = openRounds[i];
-                        return (
-                          <div key={i} className="bg-black/30 rounded-lg border border-white/5 overflow-hidden transition-colors hover:border-white/10 shadow-sm">
-                            <div onClick={() => toggleRound(i)} className="p-4 cursor-pointer flex items-center gap-4 select-none">
-                              <div className={`p-1.5 rounded-full transition-colors ${isOpen ? 'bg-zinc-800 text-white' : 'text-zinc-500 bg-zinc-900/50'}`}>
-                                {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                              </div>
-                              <span className={`text-lg font-bold tracking-tight ${isOpen ? 'text-white' : 'text-zinc-400'}`}>
-                                Round {i + 1 < 10 ? `0${i + 1}` : i + 1}
-                              </span>
-                              <div className="ml-auto flex items-center gap-3 sm:gap-6 font-mono text-[11px] tracking-widest font-semibold">
-                                <span className="text-zinc-500 hidden sm:inline">{r?.posts || 0} EVENTS</span>
-                                <div className="flex gap-2 flex-wrap justify-end">
-                                  {Object.entries(r?.outcome_counts || { [outcomeEntries[0]?.label || "Yes"]: r?.yes || 0, [outcomeEntries[1]?.label || "No"]: r?.no || 0 }).slice(0, 4).map(([label, count]: any, ci) => {
-                                    const color = outcomePalette[ci % outcomePalette.length];
-                                    return (
-                                      <span key={label} className="px-2.5 py-1 rounded-md border shadow-inner" style={{ color, background: `${color}1a`, borderColor: `${color}33` }}>
-                                        {count || 0} {label}
-                                      </span>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            </div>
-                            {isOpen && (
-                              <div className="px-6 pb-8 pt-4 sm:pl-[76px] border-t border-white/5 bg-gradient-to-b from-black/20 to-transparent">
-                                {(r?.sample_posts || []).length === 0
-                                  ? <div className="text-zinc-500 text-sm italic">Empty round matrix.</div>
-                                  : (r?.sample_posts || []).map((p: any, pi: number) => (
-                                    <div key={pi} className="py-5 first:pt-2 border-b border-white/5 last:border-0 group">
-                                      <div className="flex items-center gap-3 mb-3">
-                                        <div className="w-2 h-2 rounded-full bg-blue-500/50 group-hover:bg-blue-400 transition-colors shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-                                        <span className="text-[15px] font-bold text-zinc-200">{p.agent}</span>
-                                        <span className="font-mono text-[9px] font-bold text-black bg-zinc-300 px-2 py-0.5 rounded uppercase tracking-widest">{p.action || "ACT"}</span>
-                                        {(p.outcome || p.stance) && <span className="font-mono text-[9px] font-bold text-zinc-200 bg-zinc-800 px-2 py-0.5 rounded uppercase tracking-widest">{p.outcome || p.stance}</span>}
-                                      </div>
-                                      <div className="text-[14px] text-zinc-400 sm:pl-5 leading-relaxed">{p.content || p.text || "—"}</div>
-                                    </div>
-                                  ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+              {verdict && (
+                <div className="self-end border border-white/10 bg-white/[0.035] p-5">
+                  <div className="mb-2 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
+                    <TrendingUp size={15} />
+                    Verdict
                   </div>
-                )}
-
-                {/* Tab 3: Raw Event Stream */}
-                {activeTab === "stream" && (
-                  <div className="absolute inset-0 flex flex-col bg-[#050505]">
-                    <div className="bg-black/60 backdrop-blur-xl border-b border-zinc-800/50 p-4 sm:px-6 flex items-center gap-4 sticky top-0 z-10">
-                      <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
-                      <span className="font-mono text-xs font-bold text-zinc-400 uppercase tracking-widest">Live Terminal</span>
-                      <span className="ml-auto font-mono text-[10px] sm:text-xs font-bold text-zinc-500 bg-zinc-900 px-3 py-1 rounded-full border border-zinc-800">
-                        {totalEvents} DATA POINTS
-                      </span>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sim-scroll font-mono">
-                      {allEvents.length === 0 ? (
-                        <div className="text-center text-zinc-600 text-sm mt-20">No events in stream.</div>
-                      ) : allEvents.map((ev, ei) => (
-                        <div key={ei} className="flex gap-4 group">
-                          <div className="w-9 h-9 rounded bg-zinc-900/80 border border-zinc-800/80 flex items-center justify-center text-[11px] font-black text-zinc-500 group-hover:border-zinc-600 group-hover:text-zinc-300 transition-colors shrink-0 shadow-inner">
-                            {getInitials(ev.agent)}
-                          </div>
-                          <div className="flex-1 min-w-0 bg-zinc-900/20 p-3 sm:p-4 rounded-lg border border-transparent group-hover:border-white/5 transition-colors">
-                            <div className="flex items-center gap-3 mb-2">
-                              <span className="text-[13px] font-bold text-zinc-300">{ev.agent}</span>
-                              <span className="text-[10px] text-zinc-600 tracking-widest font-bold">RD{ev.round}</span>
-                              {ev.outcome && <span className="text-[10px] text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded tracking-widest font-bold uppercase">{ev.outcome}</span>}
-                            </div>
-                            <div className="text-[13px] text-zinc-400/90 leading-[1.7] whitespace-pre-wrap">{ev.content}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </div>
-
-          {/* ── RIGHT COLUMN (~33%) ─────────────────────────────────────── */}
-          <motion.div
-            initial={{opacity:0, x:20}} animate={{opacity:1, x:0}} transition={{delay:0.2}}
-            className="lg:col-span-4 lg:sticky lg:top-6 flex flex-col gap-4 rounded-lg border border-white/10 bg-[#101310]/90 p-5 max-h-[calc(100vh-3rem)] overflow-y-auto sim-scroll shadow-[0_24px_80px_rgba(0,0,0,0.28)]"
-            style={{
-              paddingRight: "clamp(16px, 2vw, 24px)",
-              paddingLeft: "clamp(16px, 2vw, 24px)",
-              paddingTop: 20,
-            }}
-          >
-
-            {/* Toggle button — only shown for Polymarket markets */}
-            {baseDomain.toLowerCase() === "polymarket" && marketSlug && (
-              <div className="flex justify-end shrink-0">
-                <button
-                  onClick={() => setShowPolymarket(!showPolymarket)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-400/10 hover:bg-sky-400/15 text-sky-200 border border-sky-400/20 rounded-md text-xs font-bold tracking-tight transition-colors"
-                >
-                  {showPolymarket ? <ArrowLeft size={12} /> : <ExternalLink size={12} />}
-                  {showPolymarket ? "Back to Simulation" : "View Polymarket Data"}
-                </button>
-              </div>
-            )}
-
-            {/* Sliding panel container */}
-            <div className="relative flex-1 min-h-[420px] overflow-hidden">
-              <AnimatePresence mode="wait">
-
-                {/* ── Polymarket iframe panel ── */}
-                {showPolymarket ? (
-                  <motion.div
-                    key="polymarket-iframe"
-                    initial={{ opacity: 0, x: 50 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -50 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                    className="absolute inset-0 overflow-y-auto sim-scroll"
-                  >
-                    {polyMarketLoading ? (
-                      <div className="flex flex-col items-center justify-center h-full gap-4">
-                        <Loader2 size={28} className="animate-spin text-blue-500" />
-                        <span className="text-sm text-zinc-500 font-mono">Fetching live data...</span>
-                      </div>
-                    ) : polyMarketData ? (
-                      <div className="p-4 flex flex-col gap-5">
-                        {/* Header */}
-                        <div className="flex items-center gap-3">
-                          {polyMarketData.image && (
-                            <img src={polyMarketData.image} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" onError={e => e.currentTarget.style.display='none'} />
-                          )}
-                          <div>
-                            <div className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">POLYMARKET LIVE</div>
-                            <div className="text-sm font-black text-white leading-snug">{polyMarketData.title}</div>
-                          </div>
-                        </div>
-
-                        {/* Price Chart */}
-                        {chartLoading ? (
-                          <div className="h-28 bg-white/[0.04] rounded-lg flex items-center justify-center">
-                            <Loader2 size={16} className="animate-spin text-zinc-400" />
-                          </div>
-                        ) : chartHistory.length > 2 ? (() => {
-                          const W = 320, H = 96;
-                          const ps = chartHistory.map(p => p.p * 100);
-                          const minP = Math.max(0, Math.min(...ps) - 5);
-                          const maxP = Math.min(100, Math.max(...ps) + 5);
-                          const range = maxP - minP || 1;
-                          const pts = chartHistory.map((p, i) => [
-                            (i / (chartHistory.length - 1)) * W,
-                            H - ((p.p * 100 - minP) / range) * H
-                          ]);
-                          const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
-                          const areaD = `${pathD} L${W},${H} L0,${H} Z`;
-                          const lastP = ps[ps.length - 1];
-                          const firstP = ps[0];
-                          const isUp = lastP >= firstP;
-                          const color = isUp ? '#22c55e' : '#ef4444';
-                          return (
-                            <div className="rounded-lg overflow-hidden border border-white/10 bg-white/[0.035] p-3">
-                              <div className="flex justify-between items-center mb-2">
-                                <span className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase">YES — 7 day price</span>
-                                <span className={`text-xs font-black ${isUp ? 'text-emerald-600' : 'text-rose-500'}`}>
-                                  {lastP.toFixed(1)}%
-                                </span>
-                              </div>
-                              <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{height: 80}} preserveAspectRatio="none">
-                                <defs>
-                                  <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor={color} stopOpacity="0.3" />
-                                    <stop offset="100%" stopColor={color} stopOpacity="0.02" />
-                                  </linearGradient>
-                                </defs>
-                                <path d={areaD} fill="url(#chartGrad)" />
-                                <path d={pathD} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                {/* Current price dot */}
-                                <circle cx={pts[pts.length-1][0].toFixed(1)} cy={pts[pts.length-1][1].toFixed(1)} r="3" fill={color} />
-                              </svg>
-                            </div>
-                          );
-                        })() : null}
-
-                        {/* Markets / Outcomes */}
-                        {(polyMarketData.markets || []).map((mkt: any, mi: number) => (
-                          <div key={mi} className="border border-white/10 rounded-lg p-4 bg-white/[0.025]">
-                            {polyMarketData.markets.length > 1 && (
-                              <div className="text-[11px] text-zinc-500 font-medium mb-3 leading-snug">{mkt.question}</div>
-                            )}
-                            <div className="flex flex-col gap-2.5">
-                              {(mkt.outcomes || []).map((o: any, oi: number) => (
-                                <div key={oi}>
-                                  <div className="flex justify-between items-center mb-1">
-                                    <span className="text-xs font-bold text-zinc-100">{o.label}</span>
-                                    <span className={`text-sm font-black ${
-                                      o.label.toLowerCase() === 'yes' ? 'text-emerald-600' : 'text-rose-500'
-                                    }`}>{o.prob}%</span>
-                                  </div>
-                                  <div className="h-2 bg-black/40 rounded-full overflow-hidden">
-                                    <motion.div
-                                      initial={{ width: 0 }}
-                                      animate={{ width: `${o.prob}%` }}
-                                      transition={{ duration: 0.8, ease: 'easeOut', delay: oi * 0.1 }}
-                                      className={`h-full rounded-full ${
-                                        o.label.toLowerCase() === 'yes'
-                                          ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
-                                          : 'bg-gradient-to-r from-rose-500 to-rose-400'
-                                      }`}
-                                    />
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                            {/* Mini stats */}
-                            <div className="grid grid-cols-2 gap-2 mt-4">
-                              <div className="bg-white/[0.04] rounded-md p-2.5">
-                                <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Volume</div>
-                                <div className="text-sm font-black text-zinc-100">{mkt.volume}</div>
-                              </div>
-                              <div className="bg-white/[0.04] rounded-md p-2.5">
-                                <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Liquidity</div>
-                                <div className="text-sm font-black text-zinc-100">
-                                  {mkt.liquidity >= 1000 ? `$${(mkt.liquidity/1000).toFixed(0)}K` : `$${Math.round(mkt.liquidity)}`}
-                                </div>
-                              </div>
-                              <div className="bg-zinc-50 rounded-md p-2.5">
-                                <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Best Bid</div>
-                                <div className="text-sm font-black text-black">{Math.round(mkt.bestBid * 100)}¢</div>
-                              </div>
-                              <div className="bg-zinc-50 rounded-md p-2.5">
-                                <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Best Ask</div>
-                                <div className="text-sm font-black text-black">{Math.round(mkt.bestAsk * 100)}¢</div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-
-                        {/* End date */}
-                        {polyMarketData.endDate && (
-                          <div className="flex items-center gap-2 text-xs text-zinc-400">
-                            <Clock size={12} />
-                            <span>Closes {new Date(polyMarketData.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                          </div>
-                        )}
-
-                        {/* Market stats from simulation record */}
-                        <div className="border-t border-white/10 pt-4">
-                          <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-3">Market Snapshot</div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="bg-white/[0.04] rounded-md p-2.5">
-                              <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Volume</div>
-                              <div className="text-sm font-black text-zinc-100">{marketStats.volume}</div>
-                            </div>
-                            <div className="bg-white/[0.04] rounded-md p-2.5">
-                              <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Liquidity</div>
-                              <div className="text-sm font-black text-zinc-100">{marketStats.liquidity}</div>
-                            </div>
-                            <div className="bg-white/[0.04] rounded-md p-2.5">
-                              <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Last Trade</div>
-                              <div className="text-sm font-black text-zinc-100">{marketStats.lastTrade}</div>
-                            </div>
-                            <div className="bg-white/[0.04] rounded-md p-2.5">
-                              <div className="text-[9px] font-bold tracking-widest text-zinc-400 uppercase mb-0.5">Status</div>
-                              <div className="text-sm font-black text-zinc-100">{marketStats.timeLeft}</div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* CTA */}
-                        <a
-                          href={`https://polymarket.com/event/${marketSlug}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center justify-center gap-2 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors"
-                        >
-                          <ExternalLink size={12} />
-                          Trade on Polymarket
-                        </a>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-400">
-                        <BarChart3 size={32} className="opacity-30" />
-                        <span className="text-sm">Could not load market data</span>
-                      </div>
-                    )}
-                  </motion.div>
-                ) : (
-
-                  /* ── Simulation results panel ── */
-                  <motion.div
-                    key="sim-results"
-                    initial={{ opacity: 0, x: -50 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 50 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                    className="absolute inset-0 overflow-y-auto sim-scroll pb-10 flex flex-col"
-                  >
-
-                    {/* ② Pipeline Timing Breakdown */}
-                    {Object.keys(stepTiming).length > 1 && (() => {
-                      const steps = Object.entries(stepTiming).filter(([k]) => k !== "total");
-                      const total = stepTiming.total || 1;
-                      const STEP_LABELS: Record<string, string> = {
-                        init: "Init & Auth",
-                        ontology: "Ontology",
-                        graph_build: "Graph Build",
-                        agents: "Agent Profiles",
-                        config: "Sim Config",
-                        simulation: "Simulation",
-                        verdict: "Verdict",
-                      };
-                      return (
-                        <div className="mb-4 border border-white/10 rounded-lg overflow-hidden bg-white/[0.025]">
-                          <div className="bg-white/[0.04] px-4 py-3 border-b border-white/8 flex items-center justify-between">
-                            <span className="text-[10px] font-black tracking-widest uppercase text-zinc-500">⏱ Pipeline Timing</span>
-                            <span className="text-xs font-black text-zinc-200">{total}s total</span>
-                          </div>
-                          <div className="p-3 flex flex-col gap-2">
-                            {steps.map(([key, secs]) => {
-                              const pct = Math.min(100, Math.round((secs / total) * 100));
-                              const color = secs < 10 ? "bg-emerald-400" : secs < 30 ? "bg-amber-400" : "bg-rose-500";
-                              const textColor = secs < 10 ? "text-emerald-300" : secs < 30 ? "text-amber-300" : "text-rose-300";
-                              return (
-                                <div key={key}>
-                                  <div className="flex justify-between items-center mb-1">
-                                    <span className="text-[11px] font-semibold text-zinc-400">{STEP_LABELS[key] || key}</span>
-                                    <span className={`text-[11px] font-black ${textColor}`}>{secs}s</span>
-                                  </div>
-                                  <div className="h-1.5 bg-black/40 rounded-full overflow-hidden">
-                                    <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {/* ③ Verdict */}
-                    <div className="pb-4">
-                      <div className="rounded-lg border border-white/10 bg-white/[0.025] p-5 sm:p-6">
-                        {backendConfidence && (
-                          <div className={`inline-flex items-center gap-1.5 text-[10px] font-black tracking-widest uppercase px-2.5 py-1 rounded-full mb-3 ${
-                            backendConfidence === 'HIGH' ? 'bg-emerald-100 text-emerald-700' :
-                            backendConfidence === 'LOW' ? 'bg-rose-100 text-rose-700' :
-                            'bg-zinc-100 text-zinc-600'
-                          }`}>
-                            <span>◉</span> {backendConfidence} confidence
-                          </div>
-                        )}
-                        {verdictLoading ? (
-                          <div className="flex items-center gap-3 text-zinc-400 text-sm">
-                            <Loader2 size={16} className="animate-spin text-blue-500" />
-                            <span className="animate-pulse">Synthesizing consensus...</span>
-                          </div>
-                        ) : verdict ? (
-                          <p className="text-sm md:text-base font-semibold text-zinc-200 leading-7">{verdict}</p>
-                        ) : (
-                          <p className="text-sm text-zinc-500 italic">
-                            {reportText ? "Generating verdict..." : "No report data available."}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  <p className="text-sm leading-7 text-white">{verdict}</p>
+                </div>
+              )}
             </div>
           </motion.div>
-        </div>
 
+          <motion.aside
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="self-start rounded-b-[22px] rounded-t-none border border-black/10 bg-white p-5 text-black shadow-[0_18px_60px_rgba(0,0,0,0.34)] sm:p-6"
+          >
+            <div className="mb-5 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <img src={sourceIcon(source)} alt="" className="h-8 w-8 rounded-lg object-contain" />
+                <div>
+                  <div className="font-semibold text-heading-lg" style={{ color: "#64748b", fontSize: 12 }}>{label}</div>
+                  <div className="font-semibold text-heading-lg" style={{ color: "#111827" }}>Market data</div>
+                </div>
+              </div>
+              {marketLoading && <Loader2 className="animate-spin text-zinc-500" size={18} />}
+            </div>
+
+            <MiniMarketChart history={chartHistory} loading={chartLoading} light />
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              {[
+                ["Volume", metricVolume],
+                ["24h volume", metricVolume24h],
+                ["Liquidity", metricLiquidity],
+                ["Last bid", metricBid],
+                ["Best ask", metricAsk],
+                ["Last trade", metricLast],
+                ["Spread", metricSpread],
+                ["24h change", metricChange],
+                ["Ends", metricEndDate],
+                ["Status", metricStatus],
+              ].map(([metric, value]) => (
+                <div key={metric} className="rounded-xl border border-black/10 bg-black/[0.035] p-4">
+                  <div className="mb-1 font-semibold text-heading-lg" style={{ color: "#64748b", fontSize: 11 }}>{metric}</div>
+                  <div className="font-semibold text-heading-2xl text-[28px]" style={{ color: "#111827" }}>{value}</div>
+                </div>
+              ))}
+            </div>
+
+            {marketUrl && (
+              <a href={marketUrl} target="_blank" rel="noopener noreferrer" className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-black px-4 py-3 font-semibold text-heading-lg text-white transition hover:bg-zinc-800">
+                <ExternalLink size={16} />
+                View on {label}
+              </a>
+            )}
+          </motion.aside>
+        </section>
+
+        <section className="grid items-stretch gap-5 lg:grid-cols-2">
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="flex min-h-[390px] flex-col border border-[#25303a] bg-[#13191f] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.28)] sm:p-6"
+          >
+            <div className="mb-5 flex items-center gap-3 border-b border-white/10 pb-4">
+              <div className="flex h-10 w-10 items-center justify-center border border-amber-400/20 bg-amber-400/10 text-amber-300">
+                <Zap size={19} />
+              </div>
+              <div>
+                <div className="font-semibold text-heading-lg" style={{ color: "#71717a", fontSize: 12 }}>Why Hemlo moved</div>
+                <h2 className="font-semibold text-heading-lg text-text-primary">Key Factors</h2>
+              </div>
+            </div>
+            <div
+              className="grid flex-1 gap-2"
+              style={{
+                gridTemplateRows: visibleFactors.length
+                  ? `repeat(${Math.min(visibleFactors.length, 6)}, minmax(0, 1fr))`
+                  : undefined,
+              }}
+            >
+              {visibleFactors.length ? visibleFactors.slice(0, 6).map((factor, index) => (
+                <div key={`${factor}-${index}`} className="grid h-full grid-cols-[34px_minmax(0,1fr)] items-center gap-4 border border-white/8 bg-[#171d22] p-4">
+                  <span className="font-semibold text-heading-lg text-amber-300">{index + 1}.</span>
+                  <p className="text-sm leading-6 text-white">{factor}</p>
+                </div>
+              )) : (
+                <div className="border border-white/8 bg-[#171d22] p-5 text-sm font-semibold text-zinc-500">No key factors were generated for this run.</div>
+              )}
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="flex min-h-[390px] flex-col border border-[#25303a] bg-[#13191f] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.28)] sm:p-6"
+          >
+            <div className="mb-5 flex items-center gap-3 border-b border-white/10 pb-4">
+              <div className="flex h-10 w-10 items-center justify-center border border-sky-400/20 bg-sky-400/10 text-sky-300">
+                <Users size={19} />
+              </div>
+              <div>
+                <div className="font-semibold text-heading-lg" style={{ color: "#71717a", fontSize: 12 }}>Agent signal</div>
+                <h2 className="font-semibold text-heading-lg text-text-primary">Notable People</h2>
+              </div>
+            </div>
+            <div
+              className="grid flex-1 gap-2"
+              style={{
+                gridTemplateRows: notablePeople.length
+                  ? `repeat(${Math.min(notablePeople.length, 5)}, minmax(0, 1fr))`
+                  : undefined,
+              }}
+            >
+              {notablePeople.length ? notablePeople.slice(0, 5).map((person: any, index: number) => {
+                const stance = String(person.stance || "").toUpperCase();
+                const positive = stance === "YES" || stance === topOutcome?.label?.toUpperCase();
+                return (
+                  <div key={`${person.name}-${index}`} className="grid h-full grid-cols-[44px_minmax(0,1fr)] items-center gap-4 border border-white/8 bg-[#171d22] p-4">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center border text-sm font-semibold" style={{
+                      borderColor: positive ? "rgba(56,232,141,0.24)" : "rgba(125,183,255,0.22)",
+                      background: positive ? "rgba(56,232,141,0.1)" : "rgba(125,183,255,0.1)",
+                      color: positive ? "#38e88d" : "#7db7ff",
+                    }}>
+                      {String(person.name || "?").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-heading-lg text-text-primary">{person.name || "Agent"}</span>
+                        {person.role && <span className="text-xs font-bold text-zinc-500">{person.role}</span>}
+                        {stance && <span className="border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-300">{stance}</span>}
+                      </div>
+                      <p className="text-sm leading-6 text-zinc-300">{person.impact || "No specific impact summary was generated."}</p>
+                    </div>
+                  </div>
+                );
+              }) : (
+                <div className="border border-white/8 bg-[#171d22] p-5 text-sm font-semibold text-zinc-500">No notable people were identified for this run.</div>
+              )}
+            </div>
+          </motion.div>
+        </section>
+
+        {similarMarkets.length > 0 && (
+          <section className="border border-[#25303a] bg-[#13191f] p-6 shadow-[0_18px_60px_rgba(0,0,0,0.24)] sm:p-7">
+            <style>{`
+              .similar-markets-grid {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 16px;
+              }
+              @media (max-width: 1200px) { .similar-markets-grid { grid-template-columns: repeat(3, 1fr); } }
+              @media (max-width: 900px)  { .similar-markets-grid { grid-template-columns: repeat(2, 1fr); } }
+              @media (max-width: 560px)  { .similar-markets-grid { grid-template-columns: 1fr; gap: 12px; } }
+            `}</style>
+            <div className="mb-5 flex items-end justify-between gap-4 border-b border-white/10 pb-4">
+              <div>
+                <div className="font-semibold text-heading-lg" style={{ color: "#71717a", fontSize: 12 }}>More context</div>
+                <h2 className="font-semibold text-heading-lg text-text-primary">Similar Markets</h2>
+              </div>
+              <div className="text-xs font-semibold text-zinc-500">{label}</div>
+            </div>
+
+            <div className="similar-markets-grid">
+              {similarMarkets.map((market) => {
+                const displayOutcomes = (market.outcomes || []).slice(0, 2);
+                const colors = ["#22c55e", "#ef4444", "#3b82f6", "#f59e0b"];
+                const content = (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    whileHover={{ borderColor: "#3a4658", backgroundColor: MARKET_CARD_HOVER_BG }}
+                    style={{
+                      background: MARKET_CARD_BG,
+                      border: `1px solid ${MARKET_CARD_BORDER}`,
+                      borderRadius: 14,
+                      padding: "16px 20px",
+                      display: "flex",
+                      flexDirection: "column",
+                      cursor: "pointer",
+                      transition: "all 0.2s",
+                      minHeight: 220,
+                      boxShadow: "0 14px 34px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.03)",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
+                      {(market.icon || market.image) ? (
+                        <img
+                          src={market.icon || market.image || sourceIcon(source)}
+                          alt=""
+                          style={{ width: 56, height: 56, borderRadius: 10, objectFit: "cover", flexShrink: 0 }}
+                          onError={(e) => { e.currentTarget.src = sourceIcon(source); }}
+                        />
+                      ) : (
+                        <img
+                          src={sourceIcon(source)}
+                          alt=""
+                          style={{ width: 56, height: 56, borderRadius: 10, objectFit: "cover", flexShrink: 0, background: "#1f2330" }}
+                        />
+                      )}
+                      <span style={{ fontSize: 10, fontWeight: 800, color: "#8a94a6", textTransform: "uppercase", letterSpacing: 1.4 }}>
+                        {market.category || market.source || ""}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "#ffffff",
+                        lineHeight: 1.4,
+                        flex: 1,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                        marginBottom: 14,
+                      }}
+                    >
+                      {market.title}
+                    </div>
+
+                    {displayOutcomes.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                        {displayOutcomes.map((outcome, index) => {
+                          const color = colors[index % colors.length];
+                          const prob = toPct(outcome.prob, 0) ?? 0;
+                          const optionImage = outcome.icon || outcome.image;
+                          return (
+                            <div key={`${market.id}-${outcome.label}-${index}`} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                                  <span style={{ color: "#d1d5db", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150, display: "flex", alignItems: "center", gap: 7 }}>
+                                    {optionImage && (
+                                      <img
+                                        src={optionImage}
+                                        alt=""
+                                        style={{ width: 20, height: 20, borderRadius: 6, objectFit: "cover", flexShrink: 0, background: "#202a33" }}
+                                        onError={(e) => { e.currentTarget.style.display = "none"; }}
+                                      />
+                                    )}
+                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{outcome.label}</span>
+                                  </span>
+                                </div>
+                                <div style={{ height: 3, background: "#1f2330", borderRadius: 3, overflow: "hidden" }}>
+                                  <div style={{ height: "100%", width: `${Math.max(prob, 1)}%`, background: color, borderRadius: 3 }} />
+                                </div>
+                              </div>
+                              <div style={{ border: `1px solid ${color}`, borderRadius: 20, padding: "3px 10px", minWidth: 46, textAlign: "center", flexShrink: 0 }}>
+                                <span style={{ color: "#fff", fontSize: 12, fontWeight: 700 }}>{prob}%</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {(market.outcomes || []).length > 2 && (
+                      <span style={{ fontSize: 10, color: "#8a94a6", fontStyle: "italic", marginTop: 2, marginBottom: 14 }}>
+                        +{(market.outcomes || []).length - 2} more outcomes
+                      </span>
+                    )}
+
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto" }}>
+                      <span style={{ fontSize: 11, color: "#8a94a6" }}>{market.volume || "$0"} vol</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "#22c55e" }}>Open</span>
+                    </div>
+                  </motion.div>
+                );
+
+                return market.link ? (
+                  <a key={market.id} href={market.link} target="_blank" rel="noopener noreferrer" className="block no-underline">
+                    {content}
+                  </a>
+                ) : (
+                  <div key={market.id}>{content}</div>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
-    </div>
+    </main>
   );
 }
