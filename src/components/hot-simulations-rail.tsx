@@ -29,7 +29,7 @@ export function HotSimulationsRail({ limit = 5 }: { limit?: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    const endpoint = "/api/simulations-completed";
+    const endpoint = `/api/simulations-completed?scope=top&limit=${limit}&lite=1`;
     const cached = readClientCache<any>(endpoint);
     if (cached) {
       setItems(Array.isArray(cached.data) ? cached.data.slice(0, limit) : []);

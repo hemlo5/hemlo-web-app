@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSimulateHomeData } from "@/lib/simulate-home-data";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 60;
 
 const CACHE_HEADERS = {

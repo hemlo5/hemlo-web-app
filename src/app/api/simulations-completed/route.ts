@@ -383,6 +383,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const scope = searchParams.get("scope") || "top"
     const limit = Math.max(1, Math.min(200, parseInt(searchParams.get("limit") || (scope === "all" ? "120" : "30")) || 30))
+    const lite = searchParams.get("lite") === "1" || searchParams.get("lite") === "true"
     const includeAllSources = scope === "all"
     const onlyToday = scope === "today"
     const supa = createClient(supaUrl, supaKey)
@@ -435,7 +436,14 @@ export async function GET(req: NextRequest) {
       })
       .slice(0, limit)
 
-    return NextResponse.json({ data: mapped }, { headers: CACHE_HEADERS })
+    const responseData = lite
+      ? mapped.map((item: any) => {
+          const { chartSeries, ...rest } = item
+          return rest
+        })
+      : mapped
+
+    return NextResponse.json({ data: responseData }, { headers: CACHE_HEADERS })
   } catch (err: any) {
     console.error("Error in simulations-completed:", err)
     return NextResponse.json({ error: err.message }, { status: 500 })

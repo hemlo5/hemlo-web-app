@@ -35,7 +35,7 @@ function useSection(endpoint: string, initialData: TrendingTopic[] = []) {
 
 export function NewsTicker({ initialItems = [] }: { initialItems?: TrendingTopic[] }) {
   const pathname = usePathname() || ""
-  const completed = useSection("/api/simulations-completed", initialItems)
+  const completed = useSection("/api/simulations-completed?scope=top&limit=20&lite=1", initialItems)
   const [isMobile, setIsMobile] = useState(false)
   const topics = completed.data.slice(0, 20)
 

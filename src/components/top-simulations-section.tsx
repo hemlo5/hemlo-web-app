@@ -37,7 +37,7 @@ export function TopSimulationsSection() {
 
   useEffect(() => {
     let cancelled = false;
-    const endpoint = "/api/simulations-completed?scope=all&limit=120";
+    const endpoint = "/api/simulations-completed?scope=all&limit=120&lite=1";
     const cached = readClientCache<any>(endpoint);
     if (cached) {
       setCompletedSims(cached.data || []);

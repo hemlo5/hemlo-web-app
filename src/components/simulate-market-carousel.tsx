@@ -412,7 +412,7 @@ export function SimulateMarketCarousel({
     async function loadCarouselMarkets(silent = false) {
       try {
         if (!silent) setLoading(true);
-        const completedEndpoint = "/api/simulations-completed?scope=top&limit=12";
+        const completedEndpoint = "/api/simulations-completed?scope=top&limit=12&lite=1";
         const completedData = await cachedJson<any>(completedEndpoint, { ttlMs: 45_000 });
         const completed = (Array.isArray(completedData.data) ? completedData.data : [])
           .map((sim: Record<string, unknown>) => {

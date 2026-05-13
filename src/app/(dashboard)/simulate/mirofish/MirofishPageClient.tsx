@@ -137,8 +137,8 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
   useEffect(() => {
     if (!initialHomeData) return;
     writeClientCache("/api/simulate-home", initialHomeData, 60_000);
-    writeClientCache("/api/simulations-completed", { data: initialHomeData.tickerItems || [] }, 45_000);
-    writeClientCache("/api/simulations-completed?scope=top&limit=12", { data: initialHomeData.carouselMarkets || [] }, 45_000);
+    writeClientCache("/api/simulations-completed?scope=top&limit=20&lite=1", { data: initialHomeData.tickerItems || [] }, 45_000);
+    writeClientCache("/api/simulations-completed?scope=top&limit=12&lite=1", { data: initialHomeData.carouselMarkets || [] }, 45_000);
   }, [initialHomeData]);
 
   // Fetch user tier on mount
