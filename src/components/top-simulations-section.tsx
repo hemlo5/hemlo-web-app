@@ -36,18 +36,28 @@ export function TopSimulationsSection() {
   const [simSort, setSimSort] = useState("divergence");
 
   useEffect(() => {
+    let cancelled = false;
     const endpoint = "/api/simulations-completed?scope=all&limit=120";
     const cached = readClientCache<any>(endpoint);
     if (cached) {
       setCompletedSims(cached.data || []);
       setLoading(false);
     }
-    cachedJson<any>(endpoint, { ttlMs: 45_000 })
+    const timer = window.setTimeout(() => {
+      cachedJson<any>(endpoint, { ttlMs: 45_000 })
       .then((d) => {
+        if (cancelled) return;
         setCompletedSims(d.data || []);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+    }, cached ? 1200 : 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   const filtered = completedSims.filter((sim) => {

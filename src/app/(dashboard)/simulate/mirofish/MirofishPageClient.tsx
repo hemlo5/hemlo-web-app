@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Loader2, ArrowRight, Check, Lock, Zap, X
@@ -9,11 +10,34 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Suspense } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { MirofishGraphPanel } from "@/components/mirofish-graph-panel";
-import { TopSimulationsSection } from "@/components/top-simulations-section";
 import { NewsTicker } from "@/components/news-ticker";
 import { SimulateMarketCarousel, getCarouselMarketOutcomes, type SimulateCarouselMarket } from "@/components/simulate-market-carousel";
-import { cachedJson, readClientCache } from "@/lib/client-cache";
+import { cachedJson, readClientCache, writeClientCache } from "@/lib/client-cache";
+import type { SimulateHomeData } from "@/lib/simulate-home-data";
+
+const MirofishGraphPanel = dynamic(
+  () => import("@/components/mirofish-graph-panel").then((mod) => mod.MirofishGraphPanel),
+  {
+    ssr: false,
+    loading: () => (
+      <div style={{ flex: 1, minHeight: 360, display: "flex", alignItems: "center", justifyContent: "center", color: "#718096", fontSize: 13, fontWeight: 700 }}>
+        Preparing graph canvas...
+      </div>
+    ),
+  },
+);
+
+const TopSimulationsSection = dynamic(
+  () => import("@/components/top-simulations-section").then((mod) => mod.TopSimulationsSection),
+  {
+    ssr: false,
+    loading: () => (
+      <div style={{ padding: "44px 0", color: "#8a94a6", fontSize: 13, fontWeight: 700 }}>
+        Loading simulations...
+      </div>
+    ),
+  },
+);
 
 // ── DOMAIN PILLS ──────────────────────────────────────────────────────────────
 const DOMAINS = [
@@ -78,7 +102,7 @@ function appendMarketOutcomesToSeed(base: string, outcomes: MarketOutcome[]) {
 }
 
 
-function MirofishTerminalContent() {
+function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: SimulateHomeData }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -106,9 +130,16 @@ function MirofishTerminalContent() {
   const [tavilyContext, setTavilyContext] = useState("");
   const [marketOutcomes, setMarketOutcomes] = useState<MarketOutcome[]>([]);
   const [marketType, setMarketType] = useState<"binary" | "categorical" | "">("");
-  const [marketQuestions, setMarketQuestions] = useState<string[]>([]);
+  const [marketQuestions, setMarketQuestions] = useState<string[]>(() => initialHomeData?.questions?.length ? initialHomeData.questions : []);
   const [marketQuestionIndex, setMarketQuestionIndex] = useState(0);
   const [promptPanelOpen, setPromptPanelOpen] = useState(false);
+
+  useEffect(() => {
+    if (!initialHomeData) return;
+    writeClientCache("/api/simulate-home", initialHomeData, 60_000);
+    writeClientCache("/api/simulations-completed", { data: initialHomeData.tickerItems || [] }, 45_000);
+    writeClientCache("/api/simulations-completed?scope=top&limit=12", { data: initialHomeData.carouselMarkets || [] }, 45_000);
+  }, [initialHomeData]);
 
   // Fetch user tier on mount
   useEffect(() => {
@@ -137,22 +168,21 @@ function MirofishTerminalContent() {
 
     async function loadMarketQuestions() {
       const questions: string[] = [];
-      const requests = [
-        cachedJson<any>("/api/simulations-completed", { ttlMs: 45_000 })
-          .then((d) => (d.data || []).forEach((item: any) => addQuestion(questions, item.topic || item.question || item.title))),
-        cachedJson<any>("/api/polymarket-browse?category=trending&limit=12", { ttlMs: 90_000 })
-          .then((d) => (d.markets || []).forEach((market: any) => addQuestion(questions, market.question || market.title))),
-        cachedJson<any>("/api/kalshi-markets?category=trending", { ttlMs: 90_000 })
-          .then((d) => (d.markets || []).forEach((market: any) => addQuestion(questions, market.title || market.question))),
-      ];
-
-      await Promise.allSettled(requests);
+      await cachedJson<any>("/api/simulate-home", { ttlMs: 60_000 })
+        .then((d) => {
+          (d.questions || []).forEach((q: string) => addQuestion(questions, q));
+          (d.carouselMarkets || []).forEach((market: any) => addQuestion(questions, market.topic || market.question || market.title));
+        })
+        .catch(() => {});
       if (!cancelled) setMarketQuestions((questions.length ? questions : fallbackQuestions).slice(0, 24));
     }
 
-    loadMarketQuestions();
-    return () => { cancelled = true; };
-  }, []);
+    const delay = initialHomeData?.questions?.length ? window.setTimeout(loadMarketQuestions, 1800) : window.setTimeout(loadMarketQuestions, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(delay);
+    };
+  }, [initialHomeData]);
 
   useEffect(() => {
     if (marketQuestions.length <= 1) return;
@@ -1229,13 +1259,14 @@ function MirofishTerminalContent() {
         )}
       </AnimatePresence>
 
-      <NewsTicker />
+      <NewsTicker initialItems={initialHomeData?.tickerItems as any[] | undefined} />
       <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column" }}>
 
         {phase === "idle" ? (
           <>
             <div style={{ position: "relative", overflow: "hidden", background: "#15191d", paddingTop: 16 }}>
               <SimulateMarketCarousel
+                initialMarkets={initialHomeData?.carouselMarkets as SimulateCarouselMarket[] | undefined}
                 onMarketSelect={handleCarouselMarketSelect}
               />
 
@@ -1643,10 +1674,10 @@ function MirofishTerminalContent() {
 }
 
 // Wrap in Suspense to avoid de-opt errors with useSearchParams
-export default function MirofishTerminalPage() {
+export default function MirofishTerminalPage({ initialHomeData }: { initialHomeData?: SimulateHomeData }) {
   return (
     <Suspense fallback={<div style={{ background: "#0a0a0a", minHeight: "100vh" }} />}>
-      <MirofishTerminalContent />
+      <MirofishTerminalContent initialHomeData={initialHomeData} />
     </Suspense>
   );
 }

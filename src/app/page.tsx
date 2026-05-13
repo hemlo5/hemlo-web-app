@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation"
+import DashboardLayout from "./(dashboard)/layout"
+import MirofishPage from "./(dashboard)/simulate/mirofish/page"
 
 export default async function RootPage({
   searchParams,
@@ -16,6 +18,7 @@ export default async function RootPage({
     redirect(`/simulate/mirofish?auth_error=${encodeURIComponent(sp.error_description ?? sp.error)}`)
   }
 
-  // Main domain opens the MiroFish app experience.
-  redirect("/simulate/mirofish")
+  // Main domain opens the app directly instead of paying a redirect round-trip.
+  const appPage = await MirofishPage()
+  return <DashboardLayout>{appPage}</DashboardLayout>
 }

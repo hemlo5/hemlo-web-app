@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 180;
+
+const CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=180, stale-while-revalidate=600",
+};
 
 const KALSHI_BASE = "https://api.elections.kalshi.com/trade-api/v2";
 const PAGE_SIZE   = 24; // cards per page (same as Polymarket)
@@ -467,9 +472,9 @@ export async function GET(req: NextRequest) {
       hasMore,
       count: markets.length,
       source: "live",
-    });
+    }, { headers: CACHE_HEADERS });
   } catch (err: any) {
     console.error("[kalshi-markets] error:", err.message);
-    return NextResponse.json({ markets: [], cursor: "", hasMore: false, error: err.message });
+    return NextResponse.json({ markets: [], cursor: "", hasMore: false, error: err.message }, { headers: CACHE_HEADERS });
   }
 }

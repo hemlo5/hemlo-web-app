@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
+export const revalidate = 120
+
+const CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300",
+}
 
 // Tag slugs used by Polymarket's /events endpoint
 const CATEGORY_TAGS: Record<string, string[]> = {
@@ -239,9 +244,9 @@ export async function GET(req: NextRequest) {
     markets.sort((a, b) => b.volumeRaw - a.volumeRaw)
     markets = markets.slice(0, limit)
 
-    return NextResponse.json({ markets, count: markets.length }, { status: 200 })
+    return NextResponse.json({ markets, count: markets.length }, { status: 200, headers: CACHE_HEADERS })
   } catch (err: any) {
     console.error("[polymarket-browse]", err.message)
-    return NextResponse.json({ markets: [], count: 0, error: err.message }, { status: 200 })
+    return NextResponse.json({ markets: [], count: 0, error: err.message }, { status: 200, headers: CACHE_HEADERS })
   }
 }

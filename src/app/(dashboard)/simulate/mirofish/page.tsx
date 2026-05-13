@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import MirofishPageClient from "./MirofishPageClient";
+import { getSimulateHomeData } from "@/lib/simulate-home-data";
+
+export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: "Run MiroFish AI Simulations | Hemlo",
@@ -15,7 +18,8 @@ export const metadata: Metadata = {
   },
 };
 
-export default function MirofishPage() {
+export default async function MirofishPage() {
+  const initialHomeData = await getSimulateHomeData();
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
@@ -32,7 +36,7 @@ export default function MirofishPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <MirofishPageClient />
+      <MirofishPageClient initialHomeData={initialHomeData} />
     </>
   );
 }

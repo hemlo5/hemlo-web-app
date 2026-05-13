@@ -6,9 +6,9 @@ import { usePathname } from "next/navigation"
 import type { TrendingTopic } from "@/lib/types"
 import { cachedJson, readClientCache } from "@/lib/client-cache"
 
-function useSection(endpoint: string) {
-  const [data, setData] = useState<TrendingTopic[]>([])
-  const [loading, setLoading] = useState(true)
+function useSection(endpoint: string, initialData: TrendingTopic[] = []) {
+  const [data, setData] = useState<TrendingTopic[]>(initialData)
+  const [loading, setLoading] = useState(initialData.length === 0)
 
   useEffect(() => {
     let cancelled = false
@@ -17,20 +17,25 @@ function useSection(endpoint: string) {
       setData(cached.data || [])
       setLoading(false)
     }
-    cachedJson<any>(endpoint, { ttlMs: 45_000 })
+    const timer = window.setTimeout(() => {
+      cachedJson<any>(endpoint, { ttlMs: 45_000 })
       .then(d => { if (!cancelled) setData(d.data || []) })
       .catch(() => { if (!cancelled) setData([]) })
       .finally(() => { if (!cancelled) setLoading(false) })
+    }, initialData.length > 0 ? 1800 : 0)
 
-    return () => { cancelled = true }
-  }, [endpoint])
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [endpoint, initialData.length])
 
   return { data, loading }
 }
 
-export function NewsTicker() {
+export function NewsTicker({ initialItems = [] }: { initialItems?: TrendingTopic[] }) {
   const pathname = usePathname() || ""
-  const completed = useSection("/api/simulations-completed")
+  const completed = useSection("/api/simulations-completed", initialItems)
   const [isMobile, setIsMobile] = useState(false)
   const topics = completed.data.slice(0, 20)
 

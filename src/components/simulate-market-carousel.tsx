@@ -388,13 +388,15 @@ function TopDivergencesPanel({
 }
 
 export function SimulateMarketCarousel({
+  initialMarkets = [],
   onMarketSelect,
 }: {
+  initialMarkets?: SimulateCarouselMarket[];
   onMarketSelect: (market: SimulateCarouselMarket) => void;
 }) {
-  const [markets, setMarkets] = useState<SimulateCarouselMarket[]>([]);
+  const [markets, setMarkets] = useState<SimulateCarouselMarket[]>(initialMarkets);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialMarkets.length === 0);
   const [isCompact, setIsCompact] = useState(false);
 
   useEffect(() => {
@@ -407,8 +409,9 @@ export function SimulateMarketCarousel({
   useEffect(() => {
     let cancelled = false;
 
-    async function loadCarouselMarkets() {
+    async function loadCarouselMarkets(silent = false) {
       try {
+        if (!silent) setLoading(true);
         const completedEndpoint = "/api/simulations-completed?scope=top&limit=12";
         const completedData = await cachedJson<any>(completedEndpoint, { ttlMs: 45_000 });
         const completed = (Array.isArray(completedData.data) ? completedData.data : [])
@@ -439,6 +442,7 @@ export function SimulateMarketCarousel({
 
         if (completed.length > 0) {
           setMarkets(completed);
+          setActiveIndex((index) => Math.min(index, completed.length - 1));
           setLoading(false);
           return;
         }
@@ -466,21 +470,25 @@ export function SimulateMarketCarousel({
           } satisfies SimulateCarouselMarket;
         });
         setMarkets(mapped);
+        setActiveIndex((index) => Math.min(index, Math.max(mapped.length - 1, 0)));
       } catch {
         if (!cancelled) setLoading(false);
-        if (!cancelled) setMarkets([]);
+        if (!cancelled && initialMarkets.length === 0) setMarkets([]);
         return;
       }
 
       if (!cancelled) setLoading(false);
     }
 
-    loadCarouselMarkets();
+    const timer = window.setTimeout(() => {
+      loadCarouselMarkets(initialMarkets.length > 0);
+    }, initialMarkets.length > 0 ? 1800 : 0);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, []);
+  }, [initialMarkets.length]);
 
   useEffect(() => {
     if (markets.length <= 1) return;

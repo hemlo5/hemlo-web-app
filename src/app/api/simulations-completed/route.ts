@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
 export const dynamic = "force-dynamic"
+export const revalidate = 60
+
+const CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+}
 
 type MarketOutcome = {
   label: string
@@ -430,7 +435,7 @@ export async function GET(req: NextRequest) {
       })
       .slice(0, limit)
 
-    return NextResponse.json({ data: mapped })
+    return NextResponse.json({ data: mapped }, { headers: CACHE_HEADERS })
   } catch (err: any) {
     console.error("Error in simulations-completed:", err)
     return NextResponse.json({ error: err.message }, { status: 500 })
