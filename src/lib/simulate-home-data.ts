@@ -32,6 +32,8 @@ export type SimulateHomeMarket = {
   endDate?: string;
   clobTokenIds?: string[];
   resultHref?: string;
+  createdAt?: string;
+  completedAt?: string;
 };
 
 export type SimulateHomeData = {
@@ -273,19 +275,23 @@ function mapCompletedRow(rowValue: unknown): SimulateHomeMarket | null {
     moneyAtStake: asText(marketInfo.volume) || domainMeta.volume,
     endDate: asText(marketInfo.endDate),
     resultHref: `/simulate/mirofish/${id}`,
+    createdAt: asText(row.created_at),
+    completedAt: asText(row.completed_at),
   };
 }
 
-function dedupeMarkets(markets: SimulateHomeMarket[]) {
-  const bestByMarket = new Map<string, SimulateHomeMarket>();
+function dedupeRecentMarkets(markets: SimulateHomeMarket[]) {
+  const latestByMarket = new Map<string, SimulateHomeMarket>();
   for (const market of markets) {
     const key = `${normalizeKey(market.source || "simulation")}:${normalizeKey(market.topic).replace(/[^a-z0-9]+/g, "-")}`;
-    const existing = bestByMarket.get(key);
-    if (!existing || Math.abs(market.divergence || 0) > Math.abs(existing.divergence || 0)) {
-      bestByMarket.set(key, market);
+    const existing = latestByMarket.get(key);
+    const marketTime = new Date(market.completedAt || market.createdAt || 0).getTime();
+    const existingTime = new Date(existing?.completedAt || existing?.createdAt || 0).getTime();
+    if (!existing || marketTime > existingTime) {
+      latestByMarket.set(key, market);
     }
   }
-  return Array.from(bestByMarket.values());
+  return Array.from(latestByMarket.values());
 }
 
 async function getCompletedHomeMarkets() {
@@ -305,13 +311,13 @@ async function getCompletedHomeMarkets() {
 
   if (error) return [];
 
-  return dedupeMarkets(
+  return dedupeRecentMarkets(
     (data || [])
       .filter((row) => isUsableCustomResult(asObject(row)))
       .map(mapCompletedRow)
       .filter(Boolean) as SimulateHomeMarket[],
   )
-    .sort((a, b) => Math.abs(b.divergence || 0) - Math.abs(a.divergence || 0))
+    .sort((a, b) => new Date(b.completedAt || b.createdAt || 0).getTime() - new Date(a.completedAt || a.createdAt || 0).getTime())
     .slice(0, 12);
 }
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrendingUp } from "lucide-react";
+import { ChevronRight, TrendingUp } from "lucide-react";
 import { cachedJson, readClientCache } from "@/lib/client-cache";
 
 export type SimulateCarouselOutcome = {
@@ -35,6 +35,8 @@ export type SimulateCarouselMarket = {
   endDate?: string;
   clobTokenIds?: string[];
   resultHref?: string;
+  createdAt?: string;
+  completedAt?: string;
 };
 
 function getOutcomeImage(outcome?: SimulateCarouselOutcome) {
@@ -412,9 +414,9 @@ export function SimulateMarketCarousel({
     async function loadCarouselMarkets(silent = false) {
       try {
         if (!silent) setLoading(true);
-        const completedEndpoint = "/api/simulations-completed?scope=top&limit=12&lite=1";
-        const completedData = await cachedJson<any>(completedEndpoint, { ttlMs: 45_000 });
-        const completed = (Array.isArray(completedData.data) ? completedData.data : [])
+        const homeEndpoint = "/api/simulate-home";
+        const homeData = readClientCache<any>(homeEndpoint) || await cachedJson<any>(homeEndpoint, { ttlMs: 45_000 });
+        const completed = (Array.isArray(homeData.carouselMarkets) ? homeData.carouselMarkets : [])
           .map((sim: Record<string, unknown>) => {
             const outcomes = Array.isArray(sim.outcomes) ? sim.outcomes as SimulateCarouselOutcome[] : undefined;
             return {
@@ -434,6 +436,8 @@ export function SimulateMarketCarousel({
               moneyAtStake: String(sim.moneyAtStake || ""),
               endDate: sim.endDate ? String(sim.endDate) : undefined,
               resultHref: String(sim.resultHref || (sim.id ? `/simulate/mirofish/${sim.id}` : "")),
+              createdAt: sim.createdAt ? String(sim.createdAt) : undefined,
+              completedAt: sim.completedAt ? String(sim.completedAt) : undefined,
             } satisfies SimulateCarouselMarket;
           })
           .filter((market: SimulateCarouselMarket) => market.topic);
@@ -501,10 +505,16 @@ export function SimulateMarketCarousel({
   const market = markets[activeIndex % Math.max(markets.length, 1)];
   const allOutcomes = market ? getCarouselMarketOutcomes(market) : [];
   const topOutcome = allOutcomes[0] || { label: "Yes", prob: 50 };
+  const canNavigate = markets.length > 1;
+  const goNext = () => {
+    if (!canNavigate) return;
+    setActiveIndex((index) => (index + 1) % markets.length);
+  };
 
   return (
     <section
       style={{
+        position: "relative",
         width: "100%",
         height: isCompact ? 630 : 467,
         minHeight: isCompact ? 630 : 467,
@@ -520,7 +530,7 @@ export function SimulateMarketCarousel({
         overflow: "hidden",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: 0, minHeight: 0, height: "100%" }}>
+      <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", minWidth: 0, minHeight: 0, height: "100%" }}>
         <AnimatePresence mode="wait">
           {market ? (
             <motion.div
@@ -646,6 +656,33 @@ export function SimulateMarketCarousel({
             </div>
           )}
         </AnimatePresence>
+        {canNavigate && (
+          <button
+            type="button"
+            aria-label="Show next simulation"
+            onClick={goNext}
+            style={{
+              position: "absolute",
+              top: "50%",
+              right: isCompact ? 18 : 12,
+              transform: "translateY(-50%)",
+              width: isCompact ? 42 : 46,
+              height: isCompact ? 42 : 46,
+              borderRadius: 999,
+              border: "1px solid rgba(0,0,0,0.12)",
+              background: "rgba(255,255,255,0.92)",
+              color: "#050505",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 14px 36px rgba(0,0,0,0.24)",
+              zIndex: 5,
+            }}
+          >
+            <ChevronRight size={isCompact ? 21 : 23} strokeWidth={2.6} />
+          </button>
+        )}
       </div>
 
       <TopDivergencesPanel markets={markets} isCompact={isCompact} />

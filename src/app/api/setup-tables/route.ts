@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { TRADE_PROPOSALS_TABLE_SQL } from "@/lib/trade-scout-db"
 
 export const dynamic = "force-dynamic"
 
@@ -75,6 +76,7 @@ export async function GET() {
       created_at timestamptz default now(),
       completed_at timestamptz
     )`,
+    TRADE_PROPOSALS_TABLE_SQL,
   ]
 
   const results: string[] = []

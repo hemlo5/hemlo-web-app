@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { BarChart2, Cpu, CreditCard, History, Settings, X } from "lucide-react";
+import { BarChart2, Cpu, CreditCard, History, Radar, Settings, X } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/client";
 
@@ -187,6 +187,12 @@ function AccountDrawer({ open, user, tier, onClose, onSignOut, onGoogle }: Accou
                 <div style={drawerLinkStyle}>
                   My Sims
                   <History size={16} color="#8d98a8" />
+                </div>
+              </Link>
+              <Link href="/trade-scout" onClick={onClose} style={{ textDecoration: "none" }}>
+                <div style={drawerLinkStyle}>
+                  Trade Scout
+                  <Radar size={16} color="#8d98a8" />
                 </div>
               </Link>
             </div>
