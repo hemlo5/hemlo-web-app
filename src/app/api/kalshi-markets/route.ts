@@ -357,6 +357,14 @@ function buildCard(event: any, markets: any[]): MarketCard {
   };
 }
 
+function cardMatchesSearch(card: MarketCard, searchQ: string) {
+  if (!searchQ) return true;
+  const outcomeText = card.outcomes.map((outcome) => outcome.label).join(" ");
+  const haystack = `${card.title} ${card.category} ${card.catKey} ${outcomeText}`.toLowerCase();
+  const terms = searchQ.split(/\s+/).filter(Boolean);
+  return terms.every((term) => haystack.includes(term));
+}
+
 // We now use `with_nested_markets=true` to get markets inside the events payload.
 // This completely removes the need for `fetchEventMarkets` N+1 calls.
 
@@ -367,6 +375,8 @@ export async function GET(req: NextRequest) {
     const category = searchParams.get("category") ?? "trending"; // catKey from frontend
     const cursor   = searchParams.get("cursor") ?? "";           // Kalshi pagination cursor
     const searchQ  = (searchParams.get("q") ?? "").toLowerCase().trim();
+    const requestedLimit = Number(searchParams.get("limit") || PAGE_SIZE);
+    const pageSize = Number.isFinite(requestedLimit) ? Math.max(3, Math.min(24, requestedLimit)) : PAGE_SIZE;
 
     // When a search query is present, fetch ALL events (trending mode = max coverage)
     const isTrending = category === "trending" || searchQ.length > 0;
@@ -414,12 +424,12 @@ export async function GET(req: NextRequest) {
       }
 
       // If we are NOT trending, and we have enough items, we can stop early
-      if (!isTrending && !searchQ && collected.length >= PAGE_SIZE + 1) break;
+      if (!isTrending && !searchQ && collected.length >= pageSize + 1) break;
       
       // If we are searching, we can stop early once we find enough matches
       if (searchQ) {
-        const matches = collected.filter(c => c.title.toLowerCase().includes(searchQ));
-        if (matches.length >= PAGE_SIZE) break;
+        const matches = collected.filter(c => cardMatchesSearch(c, searchQ));
+        if (matches.length >= pageSize) break;
       }
 
       // If Kalshi has no more events, stop
@@ -429,7 +439,7 @@ export async function GET(req: NextRequest) {
     // Sort & Paginate
     // Apply search filter after collection
     if (searchQ) {
-      collected = collected.filter(c => c.title.toLowerCase().includes(searchQ));
+      collected = collected.filter(c => cardMatchesSearch(c, searchQ));
     }
     let returnCursor = nextCursor; // Native Kalshi cursor for standard categories
 
@@ -438,21 +448,21 @@ export async function GET(req: NextRequest) {
       collected.sort((a, b) => b.volumeRaw - a.volumeRaw);
       
       // Keep only the slice requested by the frontend
-      const slice = collected.slice(trendingOffset, trendingOffset + PAGE_SIZE + 1);
-      hasMore = slice.length > PAGE_SIZE;
+      const slice = collected.slice(trendingOffset, trendingOffset + pageSize + 1);
+      hasMore = slice.length > pageSize;
       
       if (hasMore) {
-        returnCursor = (trendingOffset + PAGE_SIZE).toString();
+        returnCursor = (trendingOffset + pageSize).toString();
       } else {
         returnCursor = "";
       }
       
-      collected = slice.slice(0, PAGE_SIZE);
+      collected = slice.slice(0, pageSize);
     } else {
       // Standard category: we stop early, so just slice what we have
-      hasMore = collected.length > PAGE_SIZE;
+      hasMore = collected.length > pageSize;
       if (!hasMore) returnCursor = ""; // End reached
-      collected = collected.slice(0, PAGE_SIZE);
+      collected = collected.slice(0, pageSize);
     }
 
     const markets = await Promise.all(

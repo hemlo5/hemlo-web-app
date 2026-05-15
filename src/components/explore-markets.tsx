@@ -50,6 +50,16 @@ type KalshiMarket = {
   outcomes?: { label: string; prob: number; volumeRaw: number; image?: string; icon?: string }[];
 };
 
+type SearchSuggestion = {
+  source: "polymarket" | "kalshi";
+  id: string;
+  title: string;
+  category?: string;
+  image?: string;
+  volume?: string;
+  market: PolyMarket | KalshiMarket;
+};
+
 // (No static KALSHI_IMG map needed — each market carries its own image from the API)
 
 // ── CONVERT KALSHI → POLYMARKET SHAPE FOR MODAL ───────────────────────────────
@@ -345,10 +355,18 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
   const [kalshiLoadingMore, setKalshiLoadingMore] = useState(false);
   const [kalshiSearchQuery, setKalshiSearchQuery] = useState("");
   const [kalshiSearchInput, setKalshiSearchInput] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
   // Selected market for modal (shared)
   const [selected, setSelected] = useState<PolyMarket | null>(null);
   const [launchMarket, setLaunchMarket] = useState<MirofishLaunchMarket | null>(null);
+
+  useEffect(() => {
+    setSearchInput(topTab === "kalshi" ? kalshiSearchInput || kalshiSearchQuery : searchQuery);
+    setSuggestions([]);
+  }, [topTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch Polymarket whenever category / search / limit changes
   useEffect(() => {
@@ -415,18 +433,83 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
       .finally(() => setKalshiLoadingMore(false));
   };
 
+  useEffect(() => {
+    const query = searchInput.trim();
+    if (query.length < 2) {
+      setSuggestions([]);
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const source = topTab;
+    const suggestionLimit = source === "polymarket" ? 14 : 10;
+    setSuggestionsLoading(true);
+
+    const timeout = window.setTimeout(() => {
+      const params = new URLSearchParams({ category: "trending", q: query, limit: String(suggestionLimit) });
+      const endpoint = source === "kalshi"
+        ? `/api/kalshi-markets?${params}`
+        : `/api/polymarket-browse?${params}`;
+
+      cachedJson<any>(endpoint, { ttlMs: 45_000 })
+        .then((data) => {
+          if (cancelled) return;
+          const next = (data.markets || []).slice(0, suggestionLimit).map((market: any) => ({
+            source,
+            id: String(market.id || market.slug || market.title || market.question),
+            title: market.question || market.title || "",
+            category: market.category || (source === "kalshi" ? "Kalshi" : "Polymarket"),
+            image: market.icon || market.image || "",
+            volume: market.volume || "",
+            market,
+          })).filter((item: SearchSuggestion) => item.title);
+          setSuggestions(next);
+        })
+        .catch(() => {
+          if (!cancelled) setSuggestions([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSuggestionsLoading(false);
+        });
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [searchInput, topTab]);
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    const nextQuery = searchInput.trim();
     if (topTab === "kalshi") {
-      setKalshiSearchQuery(searchInput.trim());
+      setKalshiSearchInput(nextQuery);
+      setKalshiSearchQuery(nextQuery);
     } else {
-      setSearchQuery(searchInput.trim());
+      setSearchQuery(nextQuery);
+    }
+    setSearchFocused(false);
+  };
+
+  const handleSuggestionSelect = (suggestion: SearchSuggestion) => {
+    setSearchInput(suggestion.title);
+    setSearchFocused(false);
+    setSuggestions([]);
+    if (suggestion.source === "kalshi") {
+      const market = suggestion.market as KalshiMarket;
+      setKalshiSearchInput(suggestion.title);
+      setKalshiSearchQuery(suggestion.title);
+      setSelected(kalshiToPolyMarket(market));
+    } else {
+      setSearchQuery(suggestion.title);
+      setSelected(suggestion.market as PolyMarket);
     }
   };
 
   // sync search input placeholder value with active tab
   const searchPlaceholder = topTab === "polymarket" ? "Search Polymarket..." : "Search Kalshi...";
-  const activeSearchQuery = topTab === "kalshi" ? kalshiSearchQuery : searchQuery;
+  const showSuggestions = searchFocused && searchInput.trim().length >= 2;
 
   return (
     <>
@@ -465,23 +548,99 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
             </div>
           </div>
 
-          <form className="explore-header-controls" onSubmit={handleSearch} style={{ display: "flex", flex: "1 1 auto", justifyContent: "flex-end", maxWidth: 300 }}>
+          <form className="explore-header-controls" onSubmit={handleSearch} style={{ display: "flex", flex: "1 1 520px", justifyContent: "flex-end", maxWidth: 560 }}>
             <div style={{ position: "relative", width: "100%" }}>
               <Search size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", zIndex: 2 }} />
               <input
                 type="text"
                 value={searchInput}
-                onChange={e => setSearchInput(e.target.value)}
+                onChange={e => {
+                  setSearchInput(e.target.value);
+                  if (topTab === "kalshi") setKalshiSearchInput(e.target.value);
+                }}
                 placeholder={searchPlaceholder}
                 style={{ padding: "9px 74px 9px 34px", fontSize: 13, border: "1px solid var(--border)",
                   borderRadius: 10, background: "var(--bg-secondary)", color: "var(--text-primary)",
                   outline: "none", width: "100%", height: 36 }}
-                onFocus={e => (e.currentTarget.style.borderColor = "var(--accent)")}
-                onBlur={e  => (e.currentTarget.style.borderColor = "var(--border)")}
+                onFocus={e => { setSearchFocused(true); e.currentTarget.style.borderColor = "var(--accent)"; }}
+                onBlur={e  => { e.currentTarget.style.borderColor = "var(--border)"; window.setTimeout(() => setSearchFocused(false), 120); }}
               />
               <button type="submit" style={{ position: "absolute", right: 3, top: 3, bottom: 3,
                 padding: "0 14px", background: "var(--accent)", border: "none", borderRadius: 7,
                 color: "#000", fontWeight: 800, fontSize: 11, cursor: "pointer" }}>Go</button>
+              {showSuggestions && (
+                <div style={{
+                  position: "absolute",
+                  top: 42,
+                  right: 0,
+                  width: "min(680px, calc(100vw - 32px))",
+                  maxHeight: 500,
+                  overflowY: "auto",
+                  background: "#0f141a",
+                  border: "1px solid #2a3444",
+                  borderRadius: 14,
+                  boxShadow: "0 22px 50px rgba(0,0,0,0.42)",
+                  zIndex: 80,
+                  padding: 8,
+                }}>
+                  {suggestionsLoading && suggestions.length === 0 ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 10px", color: "#8a94a6", fontSize: 12, fontWeight: 800 }}>
+                      <Loader2 size={14} className="animate-spin" />
+                      Searching {topTab === "kalshi" ? "Kalshi" : "Polymarket"}...
+                    </div>
+                  ) : suggestions.length === 0 ? (
+                    <div style={{ padding: "12px 10px", color: "#8a94a6", fontSize: 12, fontWeight: 800 }}>
+                      Press Enter to search for &quot;{searchInput.trim()}&quot;
+                    </div>
+                  ) : (
+                    suggestions.map((suggestion) => (
+                      <button
+                        key={`${suggestion.source}-${suggestion.id}`}
+                        type="button"
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          handleSuggestionSelect(suggestion);
+                        }}
+                        style={{
+                          width: "100%",
+                          display: "grid",
+                          gridTemplateColumns: "38px minmax(0, 1fr) auto",
+                          alignItems: "center",
+                          gap: 10,
+                          border: "none",
+                          borderRadius: 10,
+                          background: "transparent",
+                          color: "#ffffff",
+                          textAlign: "left",
+                          padding: "9px 10px",
+                          cursor: "pointer",
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.07)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                      >
+                        <div style={{ width: 38, height: 38, borderRadius: 8, overflow: "hidden", background: "#1e2428", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {suggestion.image ? (
+                            <img src={suggestion.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                          ) : (
+                            <Search size={15} color="#8a94a6" />
+                          )}
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 850, color: "#f8fafc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {suggestion.title}
+                          </div>
+                          <div style={{ marginTop: 2, fontSize: 10, color: "#8a94a6", fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                            {suggestion.category || suggestion.source}
+                          </div>
+                        </div>
+                        <div style={{ color: suggestion.source === "kalshi" ? "#22c55e" : "#7db7ff", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap" }}>
+                          {suggestion.volume || "Open"}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </form>
         </div>
@@ -591,7 +750,7 @@ export function ExploreMarkets({ defaultTab = "polymarket", hideTabs = false }: 
           <div style={{ background: MARKET_PANEL_BG, border: "1px solid #1f2735", borderRadius: "0 12px 12px 12px", padding: "20px 20px 24px" }}>
             <CatTabs
               active={kalshiActiveCat}
-              onSelect={k => setKalshiActiveCat(k)}
+              onSelect={k => { setKalshiActiveCat(k); setKalshiSearchQuery(""); setKalshiSearchInput(""); setSearchInput(""); }}
               accentColor="#22c55e"
               layoutId="kalshi-active-tab"
             />

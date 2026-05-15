@@ -37,6 +37,69 @@ async function fetchJson(url: string): Promise<any[]> {
   }
 }
 
+async function fetchAny(url: string): Promise<any> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
+      next: { revalidate: 120 },
+    })
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
+}
+
+function normalizeSearchText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9$]+/g, " ").replace(/\s+/g, " ").trim()
+}
+
+function eventSearchText(ev: any) {
+  const tags = Array.isArray(ev.tags)
+    ? ev.tags.map((tag: any) => `${tag?.label || ""} ${tag?.slug || ""}`).join(" ")
+    : ""
+  const markets = Array.isArray(ev.markets)
+    ? ev.markets.map((market: any) => `${market?.question || ""} ${market?.groupItemTitle || ""}`).join(" ")
+    : ""
+  return normalizeSearchText(`${ev.title || ""} ${ev.description || ""} ${tags} ${markets}`)
+}
+
+function scoreSearchMatch(ev: any, query: string) {
+  const q = normalizeSearchText(query)
+  if (!q) return 0
+
+  const title = normalizeSearchText(ev.title || ev.description || "")
+  const text = eventSearchText(ev)
+  const words = q.split(" ").filter(Boolean)
+  let score = 0
+
+  if (title === q) score += 160
+  if (title.startsWith(q)) score += 110
+  if (title.includes(q)) score += 80
+  if (text.includes(q)) score += 45
+
+  for (const word of words) {
+    if (title.includes(word)) score += 18
+    else if (text.includes(word)) score += 8
+  }
+
+  if (score <= 0) return 0
+
+  score += Math.min(25, Math.log10(Math.max(Number(ev.volume || ev.volumeNum || 1), 1)) * 4)
+  score += Math.min(18, Math.log10(Math.max(Number(ev.volume24hr || 1), 1)) * 3)
+  return score
+}
+
+function dedupeEvents(events: any[]) {
+  const seen = new Set<string>()
+  return events.filter((ev: any) => {
+    const key = String(ev?.id || ev?.slug || ev?.title || "")
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 /**
  * Parse a Polymarket EVENT into a market card.
  *
@@ -175,29 +238,24 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const category = searchParams.get("category") || "trending"
   const query = searchParams.get("q") || ""
-  const limit = parseInt(searchParams.get("limit") || "12")
+  const requestedLimit = parseInt(searchParams.get("limit") || "12", 10)
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(100, requestedLimit)) : 12
 
   try {
     let events: any[] = []
 
     if (query) {
       // ── SEARCH ──────────────────────────────────────────────────────────────
-      const url = `https://gamma-api.polymarket.com/events?limit=${limit}&active=true&closed=false&_placeholderSearch=${encodeURIComponent(query)}`
-      events = await fetchJson(url)
-      // Fallback: try the public search endpoint
-      if (!events.length) {
-        const res = await fetch(
-          `https://gamma-api.polymarket.com/public-search?q=${encodeURIComponent(query)}`,
-          { 
-            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" }, 
-            next: { revalidate: 120 } 
-          }
-        )
-        if (res.ok) {
-          const data = await res.json()
-          events = data?.events || []
-        }
-      }
+      const eventSearchLimit = 100
+      const eventSearchUrls = [0, 100, 200].map(offset =>
+        `https://gamma-api.polymarket.com/events?limit=${eventSearchLimit}&offset=${offset}&active=true&closed=false&search=${encodeURIComponent(query)}`
+      )
+      const [publicSearch, ...eventPages] = await Promise.all([
+        fetchAny(`https://gamma-api.polymarket.com/public-search?q=${encodeURIComponent(query)}`),
+        ...eventSearchUrls.map(fetchJson),
+      ])
+      const rankedEvents = Array.isArray(publicSearch?.events) ? publicSearch.events : []
+      events = dedupeEvents([...rankedEvents, ...eventPages.flat()])
     } else if (category === "trending") {
       // ── TRENDING (by 24h volume) ─────────────────────────────────────────
       events = await fetchJson(
@@ -228,7 +286,8 @@ export async function GET(req: NextRequest) {
     // Parse events into market cards
     let markets = events
       .filter((ev: any) => ev && !ev.closed)
-      .map(parseEvent)
+      .map((ev: any) => ({ ...parseEvent(ev), _searchScore: query ? scoreSearchMatch(ev, query) : 0 }))
+      .filter((market: any) => !query || market._searchScore > 0)
 
     console.log(`[polymarket-browse] category=${category} events=${events.length} parsedMarkets=${markets.length}`)
 
@@ -240,11 +299,11 @@ export async function GET(req: NextRequest) {
       return true
     })
 
-    // Sort by volume and trim
-    markets.sort((a, b) => b.volumeRaw - a.volumeRaw)
-    markets = markets.slice(0, limit)
+    // Sort by relevance when searching, otherwise by volume.
+    markets.sort((a, b) => query ? (b._searchScore - a._searchScore || b.volumeRaw - a.volumeRaw) : b.volumeRaw - a.volumeRaw)
+    const publicMarkets = markets.slice(0, limit).map(({ _searchScore, ...market }) => market)
 
-    return NextResponse.json({ markets, count: markets.length }, { status: 200, headers: CACHE_HEADERS })
+    return NextResponse.json({ markets: publicMarkets, count: publicMarkets.length }, { status: 200, headers: CACHE_HEADERS })
   } catch (err: any) {
     console.error("[polymarket-browse]", err.message)
     return NextResponse.json({ markets: [], count: 0, error: err.message }, { status: 200, headers: CACHE_HEADERS })
