@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Check, ArrowRight, Beaker, PlayCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MirofishGraphPanel } from "@/components/mirofish-graph-panel";
+import { createMirofishEventSource } from "@/lib/mirofish-stream";
 
 export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain?: string }) {
   const router = useRouter();
@@ -74,9 +75,10 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
   }, [canUseAdvancedParams, depthLevel]);
 
   useEffect(() => {
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    if (!raw) return;
-    try {
+    (async () => {
+      const raw = sessionStorage.getItem(SESSION_KEY);
+      if (!raw) return;
+      try {
       const saved = JSON.parse(raw);
       if (saved.uiStep !== 3 || !saved.miroProjectId) return;
 
@@ -106,7 +108,7 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
       const url = new URL(MODAL_URL, window.location.origin);
       url.searchParams.append("question", saved.scenario || "");
       url.searchParams.append("sim_id", simDbId);
-      url.searchParams.append("reality_seed", saved.scenario || "");
+      url.searchParams.append("reality_seed", "");
       url.searchParams.append("agent_count", String(saved.agents || 15));
       url.searchParams.append("rounds", String(saved.rounds || 5));
       url.searchParams.append("domain", domain);
@@ -114,7 +116,7 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
       const startT = Date.now();
       const getT = () => formatSecs(Math.floor((Date.now() - startT) / 1000));
 
-      const es = new EventSource(url.toString());
+      const es = await createMirofishEventSource(url);
       esRef.current = es;
 
       es.onmessage = (e) => {
@@ -160,7 +162,8 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
         addLogR("✗ Connection to Modal engine lost after reconnect.");
         sessionStorage.removeItem(SESSION_KEY);
       };
-    } catch (e) { console.error("[mirofish wizard] sessionStorage error", e); }
+      } catch (e) { console.error("[mirofish wizard] sessionStorage error", e); }
+    })();
   }, []);
 
   // Persist running state
@@ -270,14 +273,14 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
       const url = new URL(MODAL_URL, window.location.origin);
       url.searchParams.append("question", scenario);
       url.searchParams.append("sim_id", simDbId);
-      url.searchParams.append("reality_seed", seedRef.current || seed || scenario);
+      url.searchParams.append("reality_seed", "");
       url.searchParams.append("agent_count", agents.toString());
       url.searchParams.append("rounds", rounds.toString());
       url.searchParams.append("domain", domain);
 
       addLog(`→ Connecting to Modal Serverless Engine...`);
       
-      const es = new EventSource(url.toString());
+      const es = await createMirofishEventSource(url);
 
       es.onmessage = (e) => {
         try {

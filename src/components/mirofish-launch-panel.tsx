@@ -7,6 +7,7 @@ import { ArrowRight, Check, Loader2, Lock, X, Zap } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { MirofishGraphPanel } from "@/components/mirofish-graph-panel";
+import { createMirofishEventSource } from "@/lib/mirofish-stream";
 
 export type MirofishLaunchOutcome = {
   label: string;
@@ -566,7 +567,7 @@ export function MirofishLaunchPanel({
       const url = new URL(modalUrl, window.location.origin);
       url.searchParams.append("question", scenario);
       url.searchParams.append("sim_id", simDbId);
-      url.searchParams.append("reality_seed", simulationSeed);
+      url.searchParams.append("reality_seed", "");
       url.searchParams.append("agent_count", String(agents));
       url.searchParams.append("rounds", String(rounds));
       url.searchParams.append("domain", source);
@@ -575,7 +576,7 @@ export function MirofishLaunchPanel({
         url.searchParams.append("market_type", activeMarketType);
       }
 
-      const es = new EventSource(url.toString());
+      const es = await createMirofishEventSource(url);
       esRef.current = es;
 
       es.onmessage = (eventMessage) => {

@@ -14,6 +14,7 @@ import { NewsTicker } from "@/components/news-ticker";
 import { SimulateMarketCarousel, getCarouselMarketOutcomes, type SimulateCarouselMarket } from "@/components/simulate-market-carousel";
 import { cachedJson, readClientCache, writeClientCache } from "@/lib/client-cache";
 import type { SimulateHomeData } from "@/lib/simulate-home-data";
+import { createMirofishEventSource } from "@/lib/mirofish-stream";
 
 const MirofishGraphPanel = dynamic(
   () => import("@/components/mirofish-graph-panel").then((mod) => mod.MirofishGraphPanel),
@@ -382,7 +383,7 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
       const url = new URL(MODAL_URL, window.location.origin);
       url.searchParams.append("question", saved.scenario || "");
       url.searchParams.append("sim_id", simDbId);
-      url.searchParams.append("reality_seed", saved.seed || saved.scenario || "");
+      url.searchParams.append("reality_seed", "");
       url.searchParams.append("agent_count", String(saved.agents || 25));
       url.searchParams.append("rounds", String(saved.rounds || 6));
       url.searchParams.append("domain", saved.domain || "custom");
@@ -394,7 +395,7 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
       const startT = Date.now();
       const getT = () => formatSecs(Math.floor((Date.now() - startT) / 1000));
 
-      const es = new EventSource(url.toString());
+      const es = await createMirofishEventSource(url);
       esRef.current = es;
 
       es.onmessage = (e) => {
@@ -743,7 +744,7 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
       const url = new URL(MODAL_URL, window.location.origin);
       url.searchParams.append("question", scenario);
       url.searchParams.append("sim_id", simDbId);
-      url.searchParams.append("reality_seed", simulationSeed);
+      url.searchParams.append("reality_seed", "");
       url.searchParams.append("agent_count", agents.toString());
       url.searchParams.append("rounds", rounds.toString());
       url.searchParams.append("domain", domain);
@@ -774,7 +775,7 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
       // Start the pipeline timer on first connection
       _st['init'] = Date.now();
 
-      const es = new EventSource(url.toString());
+      const es = await createMirofishEventSource(url);
       esRef.current = es;
 
       es.onmessage = (e) => {

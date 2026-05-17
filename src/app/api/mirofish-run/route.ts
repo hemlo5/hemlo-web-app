@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
 
   const incoming = new URL(req.url).searchParams
   const simId = incoming.get("sim_id")
+  const wantsSignedUrl = incoming.get("transport") === "url"
   if (!simId) {
     return NextResponse.json({ error: "sim_id is required" }, { status: 400 })
   }
@@ -149,6 +150,20 @@ export async function GET(req: NextRequest) {
     .update({ status: "running", updated_at: new Date().toISOString() })
     .eq("id", simId)
     .eq("user_id", user.id)
+
+  if (wantsSignedUrl) {
+    return NextResponse.json(
+      {
+        url: upstreamUrl.toString(),
+        expires: upstreamUrl.searchParams.get("expires"),
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    )
+  }
 
   // Do not proxy the SSE body through Railway/Next. Long-running server-side
   // proxy streams can be closed by platform/network timeouts even while Modal
