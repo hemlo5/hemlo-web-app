@@ -1,11 +1,27 @@
 // @ts-nocheck
+import { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { TRADE_PROPOSALS_TABLE_SQL } from "@/lib/trade-scout-db"
 
 export const dynamic = "force-dynamic"
 
-export async function GET() {
+function hasAdminAccess(req: NextRequest) {
+  const adminSecret = process.env.ADMIN_SECRET
+  const authHeader = req.headers.get("authorization") ?? ""
+  const bearer = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7)
+    : authHeader
+  const explicitHeader = req.headers.get("x-admin-secret") ?? ""
+
+  return Boolean(adminSecret && (bearer === adminSecret || explicitHeader === adminSecret))
+}
+
+export async function GET(req: NextRequest) {
+  if (!hasAdminAccess(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return NextResponse.json({ error: "No Supabase creds" }, { status: 500 })

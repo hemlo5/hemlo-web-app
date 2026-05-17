@@ -18,8 +18,9 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
   const [seed, setSeed] = useState("");
   const seedRef = useRef(""); 
   const [depthLevel, setDepthLevel] = useState<"standard" | "deep" | "super">("standard");
-  const [agents, setAgents] = useState(25);
-  const [rounds, setRounds] = useState(6);
+  const [agents, setAgents] = useState(15);
+  const [rounds, setRounds] = useState(5);
+  const [userTier, setUserTier] = useState("free");
   const [parallelGen, setParallelGen] = useState(3);
   const [llmModel, setLlmModel] = useState("deepseek-v3");
 
@@ -33,6 +34,7 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
   const esRef = useRef<EventSource | null>(null); 
 
   const SESSION_KEY = "hemlo_running_sim_wizard";
+  const canUseAdvancedParams = ["pro", "premium", "founder"].includes(userTier.toLowerCase());
 
   const [activeStep, setActiveStep] = useState(0);
   const [steps, setSteps] = useState([
@@ -53,6 +55,25 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
 
   // Restore logic
   useEffect(() => {
+    fetch("/api/usage")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (data?.tier) setUserTier(String(data.tier));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!canUseAdvancedParams && depthLevel !== "standard") {
+      setDepthLevel("standard");
+      setAgents(15);
+      setRounds(5);
+      setParallelGen(3);
+      setLlmModel("deepseek-v3");
+    }
+  }, [canUseAdvancedParams, depthLevel]);
+
+  useEffect(() => {
     const raw = sessionStorage.getItem(SESSION_KEY);
     if (!raw) return;
     try {
@@ -72,7 +93,7 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
 
       timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
 
-      const MODAL_URL = process.env.NEXT_PUBLIC_MODAL_URL || "https://vaishumaniket--hemlo-mirofish-run-simulation.modal.run";
+      const MODAL_URL = "/api/mirofish-run";
       const simDbId = saved.miroProjectId;
       
       const addLogR = (msg: string) => {
@@ -82,12 +103,12 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
 
       addLogR(`→ Reconnecting to simulation ${simDbId}...`);
 
-      const url = new URL(MODAL_URL);
+      const url = new URL(MODAL_URL, window.location.origin);
       url.searchParams.append("question", saved.scenario || "");
       url.searchParams.append("sim_id", simDbId);
       url.searchParams.append("reality_seed", saved.scenario || "");
-      url.searchParams.append("agent_count", String(saved.agents || 25));
-      url.searchParams.append("rounds", String(saved.rounds || 6));
+      url.searchParams.append("agent_count", String(saved.agents || 15));
+      url.searchParams.append("rounds", String(saved.rounds || 5));
       url.searchParams.append("domain", domain);
 
       const startT = Date.now();
@@ -238,7 +259,7 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
       if (simDbId) await fetch("/api/custom-simulations", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({id: simDbId, status: "failed"}) }).catch(() => {});
     };
 
-    const MODAL_URL = process.env.NEXT_PUBLIC_MODAL_URL || "https://vaishumaniket--hemlo-mirofish-run-simulation.modal.run";
+    const MODAL_URL = "/api/mirofish-run";
 
     if (!simDbId) {
       await markFailed("Could not create simulation in database");
@@ -246,7 +267,7 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
     }
 
     try {
-      const url = new URL(MODAL_URL);
+      const url = new URL(MODAL_URL, window.location.origin);
       url.searchParams.append("question", scenario);
       url.searchParams.append("sim_id", simDbId);
       url.searchParams.append("reality_seed", seedRef.current || seed || scenario);
@@ -437,13 +458,20 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
                     { id: "standard" as const, label: "Standard", desc: "25 agents • 6 rounds • DeepSeek V3", time: "~28s", agents: 25, rounds: 6, gen: 3, model: "deepseek-v3" },
                     { id: "deep" as const, label: "Deep", desc: "100 agents • 12 rounds • GPT-4o Mini", time: "~1m 45s", agents: 100, rounds: 12, gen: 5, model: "gpt-4o-mini" },
                     { id: "super" as const, label: "Super", desc: "500 agents • 24 rounds • Qwen", time: "~8m", agents: 500, rounds: 24, gen: 10, model: "qwen" }
-                  ].map(lvl => (
+                  ].map(lvl => {
+                    const locked = lvl.id !== "standard" && !canUseAdvancedParams;
+                    const modeAgents = lvl.id === "standard" ? 15 : Math.min(lvl.agents, 250);
+                    const modeRounds = lvl.id === "standard" ? 5 : Math.min(lvl.rounds, 15);
+                    const modeDesc = lvl.id === "standard" ? "15 agents / 5 rounds / DeepSeek V3" : lvl.desc;
+                    return (
                     <button
                       key={lvl.id}
+                      disabled={locked}
                       onClick={() => {
+                        if (locked) return;
                         setDepthLevel(lvl.id);
-                        setAgents(lvl.agents);
-                        setRounds(lvl.rounds);
+                        setAgents(modeAgents);
+                        setRounds(modeRounds);
                         setParallelGen(lvl.gen);
                         setLlmModel(lvl.model);
                       }}
@@ -453,7 +481,8 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
                         border: `1px solid ${depthLevel === lvl.id ? "var(--accent)" : "var(--border)"}`,
                         color: depthLevel === lvl.id ? "var(--text-primary)" : "var(--text-muted)",
                         borderRadius: 12,
-                        cursor: "pointer",
+                        cursor: locked ? "not-allowed" : "pointer",
+                        opacity: locked ? 0.48 : 1,
                         textAlign: "left",
                         display: "flex",
                         alignItems: "center",
@@ -463,11 +492,12 @@ export function SimulateWizard({ defaultDomain = "polymarket" }: { defaultDomain
                     >
                       <div>
                         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4, letterSpacing: 0.5, textTransform: "uppercase" }}>{lvl.label}</div>
-                        <div style={{ fontSize: 12, color: depthLevel === lvl.id ? "var(--text-secondary)" : "#666" }}>{lvl.desc}</div>
+                        <div style={{ fontSize: 12, color: depthLevel === lvl.id ? "var(--text-secondary)" : "#666" }}>{modeDesc}</div>
                       </div>
                       <div style={{ fontSize: 12, fontWeight: 700, color: depthLevel === lvl.id ? "var(--accent)" : "#555" }}>{lvl.time}</div>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
 
                <div style={{ marginTop: "auto", paddingTop: 24, display: "flex", justifyContent: "space-between" }}>

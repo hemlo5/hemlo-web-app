@@ -32,10 +32,7 @@ export default function UpgradeButton({ className, children }: UpgradeButtonProp
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: user.id,
-          email: user.email,
-        }),
+        body: JSON.stringify({ plan: "pro" }),
       })
 
       const data = await res.json()

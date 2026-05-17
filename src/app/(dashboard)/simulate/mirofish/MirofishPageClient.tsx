@@ -119,10 +119,8 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
 
   const [subStep, setSubStep] = useState<"prompt" | "params">("prompt");
   const [depthMode, setDepthMode] = useState<"standard" | "super" | "deep" | "custom">("standard");
-  const [standardUses, setStandardUses] = useState(0); // For free tier limit demo
-
-  const [isPro] = useState(true);
   const [userTier, setUserTier] = useState<string>("free");
+  const isPro = ["pro", "premium", "founder"].includes(userTier.toLowerCase());
   const [engineStatus, setEngineStatus] = useState<"idle" | "queued" | "running">("idle");
   const [isGeneratingSeed, setIsGeneratingSeed] = useState(false);
   const [seedError, setSeedError] = useState("");
@@ -149,6 +147,14 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
       if (d.tier) setUserTier(d.tier)
     }).catch(() => {})
   }, []);
+
+  useEffect(() => {
+    if (!isPro && depthMode !== "standard") {
+      setDepthMode("standard");
+      setAgents(15);
+      setRounds(5);
+    }
+  }, [isPro, depthMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -364,7 +370,7 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
 
       timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
 
-      const MODAL_URL = process.env.NEXT_PUBLIC_MODAL_URL || "https://vaishumaniket--hemlo-mirofish-run-simulation.modal.run";
+      const MODAL_URL = "/api/mirofish-run";
       const simDbId = saved.miroProjectId;
       const addLogR = (msg: string) => {
         const ts = new Date().toLocaleTimeString("en-US", { hour12: false });
@@ -373,7 +379,7 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
 
       addLogR(`→ Reconnecting to simulation ${simDbId}...`);
 
-      const url = new URL(MODAL_URL);
+      const url = new URL(MODAL_URL, window.location.origin);
       url.searchParams.append("question", saved.scenario || "");
       url.searchParams.append("sim_id", simDbId);
       url.searchParams.append("reality_seed", saved.seed || saved.scenario || "");
@@ -613,11 +619,13 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
       const usageRes = await fetch("/api/usage", { signal });
       if (usageRes.ok) {
         const usageData = await usageRes.json();
-        if (usageData.usageToday >= usageData.limit) {
+        const used = usageData.usage ?? usageData.usageToday ?? 0;
+        const period = usageData.window === "month" ? "this month" : "total";
+        if (used >= usageData.limit) {
           const isPaid = usageData.tier === "pro" || usageData.tier === "premium" || usageData.tier === "founder" || usageData.tier === "starter";
           setLaunchError(isPaid
-            ? `__PAID_LIMIT_REACHED__:${usageData.usageToday}/${usageData.limit} simulations used today on your ${usageData.tier} plan. Your quota resets at midnight UTC.`
-            : `__FREE_LIMIT_REACHED__:You've used ${usageData.usageToday}/${usageData.limit} free simulations today. Upgrade to Pro for 50/day.`
+            ? `__PAID_LIMIT_REACHED__:${used}/${usageData.limit} simulations used ${period} on your ${usageData.label || usageData.tier} plan.`
+            : `__FREE_LIMIT_REACHED__:You've used ${used}/${usageData.limit} free simulations ${period}. Upgrade to Pro for 55/month.`
           );
           // NOTE: do NOT call setIsLaunching(false) here — React batches state and the overlay
           // would disappear before the error renders. The overlay stays open; user dismisses it.
@@ -723,7 +731,7 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
       if (simDbId) await fetch("/api/custom-simulations", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({id: simDbId, status: "failed"}) }).catch(() => {});
     };
 
-    const MODAL_URL = process.env.NEXT_PUBLIC_MODAL_URL || "https://vaishumaniket--hemlo-mirofish-run-simulation.modal.run";
+    const MODAL_URL = "/api/mirofish-run";
 
     if (!simDbId) {
       await markFailed("Could not create simulation in database");
@@ -732,7 +740,7 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
     }
 
     try {
-      const url = new URL(MODAL_URL);
+      const url = new URL(MODAL_URL, window.location.origin);
       url.searchParams.append("question", scenario);
       url.searchParams.append("sim_id", simDbId);
       url.searchParams.append("reality_seed", simulationSeed);
@@ -1393,12 +1401,13 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
 
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 32 }}>
                         {[
-                          { id: "standard", label: "Standard", desc: `15 Agents · 5 Rounds ${!isPro ? `(Remaining: ${2 - standardUses}/2)` : ""}`, agents: 15, rounds: 5, pro: false },
+                          { id: "standard", label: "Standard", desc: "15 Agents / 5 Rounds", agents: 15, rounds: 5, pro: false },
                           { id: "super", label: "Super", desc: "100 Agents · 10 Rounds", agents: 100, rounds: 10, pro: true },
                           { id: "deep", label: "Deep", desc: "250 Agents · 15 Rounds", agents: 250, rounds: 15, pro: true },
-                          { id: "custom", label: "Custom", desc: "Manually adjust every detail", agents: 50, rounds: 8, pro: false },
+                          { id: "custom", label: "Custom", desc: "Manually adjust every detail", agents: 50, rounds: 8, pro: true },
                         ].map(opt => {
                           const locked = opt.pro && !isPro;
+                          const modeDesc = opt.id === "standard" ? "15 Agents / 5 Rounds" : opt.desc;
                           return (
                             <button
                               key={opt.id}
@@ -1423,7 +1432,7 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
                                 <div style={{ fontSize: 13, fontWeight: 900, color: "#000" }}>{opt.label} Mode</div>
                                 {locked && <Lock size={12} color="#888" />}
                               </div>
-                              <div style={{ fontSize: 10, color: "#888", fontWeight: 600 }}>{opt.desc}</div>
+                              <div style={{ fontSize: 10, color: "#888", fontWeight: 600 }}>{modeDesc}</div>
                               {depthMode === opt.id && <div style={{ position: "absolute", top: 12, right: 12, width: 6, height: 6, borderRadius: "50%", background: "#000" }} />}
                             </button>
                           );
@@ -1456,11 +1465,6 @@ function MirofishTerminalContent({ initialHomeData }: { initialHomeData?: Simula
 
                       <button
                         onClick={() => {
-                          if (!isPro && depthMode === "standard" && standardUses >= 2) {
-                            alert("You have reached the 2-use limit for Standard mode. Please upgrade to Pro!");
-                            return;
-                          }
-                          if (!isPro && depthMode === "standard") setStandardUses(prev => prev + 1);
                           startSimulation();
                         }}
                         style={{

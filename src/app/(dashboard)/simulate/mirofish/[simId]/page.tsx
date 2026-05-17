@@ -7,21 +7,21 @@ import Link from "next/link";
 // Force Next.js to dynamically render this route
 export const dynamic = "force-dynamic";
 
+function isPublicCronSimulation(row: any) {
+  const result = row?.result || {};
+  const marketInfo = result?.marketInfo || result?.market_info || {};
+  const cronUserId = process.env.CRON_USER_ID;
+  return (
+    marketInfo?.simulatedBy === "modal_trending_cron" ||
+    (Boolean(cronUserId) && row?.user_id === cronUserId) ||
+    row?.user_id === "modal_trending_cron"
+  );
+}
+
 async function fetchSimulation(simId: string): Promise<SimulationPayload | null> {
   const serverSupabase = await createServerSupabase();
+  const { data: { user } } = await serverSupabase.auth.getUser();
 
-  // First try the authenticated user session. This keeps the result page aligned
-  // with the History page and avoids false "not found" responses under RLS.
-  try {
-    const { data, error } = await serverSupabase
-      .from("custom_simulations")
-      .select("*")
-      .eq("id", simId)
-      .maybeSingle();
-    if (!error && data) return data as SimulationPayload;
-  } catch {}
-
-  // Fallback for share/admin reads when a service-role key is available.
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceKey) return null;
@@ -33,7 +33,12 @@ async function fetchSimulation(simId: string): Promise<SimulationPayload | null>
     .eq("id", simId)
     .maybeSingle();
 
-  return (data as SimulationPayload | null) || null;
+  if (!data) return null;
+  if (isPublicCronSimulation(data) || (user && data.user_id === user.id)) {
+    return data as SimulationPayload;
+  }
+
+  return null;
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ simId: string }> }): Promise<Metadata> {

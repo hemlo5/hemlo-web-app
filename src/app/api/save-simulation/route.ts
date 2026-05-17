@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient as createSupabaseAdmin } from "@supabase/supabase-js"
 import { createClient } from "@/utils/supabase/server"
+import { checkSimulationLimit, incrementSimulationCount, sanitizeSimulationParameters } from "@/lib/simulation-usage"
 
 export const dynamic = "force-dynamic"
 
@@ -28,13 +29,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Supabase not configured" }, { status: 500 })
     }
 
+    const limitCheck = await checkSimulationLimit(user.id)
+    if (!limitCheck.allowed) {
+      return NextResponse.json({ error: limitCheck.reason }, { status: 429 })
+    }
+    const safeParams = sanitizeSimulationParameters(
+      {
+        maxAgents: limitCheck.maxAgents ?? 15,
+        maxRounds: limitCheck.maxRounds ?? 5,
+        advancedParams: limitCheck.advancedParams ?? false,
+      },
+      agent_count,
+      rounds,
+    )
+
     // Insert WITH user_id so usage is counted
     const { error } = await supa.from("custom_simulations").insert({
       user_id: user.id,
       scenario,
       domain,
-      agent_count,
-      rounds,
+      agent_count: safeParams.agentCount,
+      rounds: safeParams.rounds,
       result,
     })
 
@@ -46,10 +61,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    await incrementSimulationCount(user.id)
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("[save-simulation] Error:", error)
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 })
   }
 }
-

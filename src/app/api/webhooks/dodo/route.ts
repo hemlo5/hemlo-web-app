@@ -29,9 +29,12 @@ export async function POST(req: NextRequest) {
 
   // ── 2. Acknowledge immediately (Dodo needs 2xx fast) ─────────────────────
   // Process asynchronously so the response is not delayed.
-  processEvent(event).catch((err) =>
-    console.error("[dodo-webhook] Async processing error:", err)
-  )
+  try {
+    await processEvent(event)
+  } catch (err) {
+    console.error("[dodo-webhook] Processing error:", err)
+    return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 })
+  }
 
   return NextResponse.json({ received: true }, { status: 200 })
 }
@@ -72,12 +75,14 @@ async function processEvent(event: any) {
 
   let updatePayload: any = {}
   if (plan === "starter") {
-    updatePayload = { has_starter_pack: true }
+    updatePayload = { tier: "starter", has_starter_pack: true }
   } else if (plan === "pro" || plan === "premium") {
-    updatePayload = { tier: "premium" }
+    updatePayload = { tier: "pro" }
   } else if (plan === "founder") {
-    // Note: if founder is also not in CHECK constraint, this will fail. Assuming premium is safe.
-    updatePayload = { tier: "premium" }
+    updatePayload = { tier: "founder" }
+  } else {
+    console.error(`[dodo-webhook] Unknown plan in payment metadata: ${plan}`)
+    return
   }
 
   const { error } = await supabaseAdmin

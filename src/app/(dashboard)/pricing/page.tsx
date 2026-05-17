@@ -89,7 +89,7 @@ export default function PricingPage() {
           fetch("/api/checkout", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: currentUser.id, email: currentUser.email, plan: autoCheckout }),
+            body: JSON.stringify({ plan: autoCheckout }),
           })
             .then(r => r.json() as Promise<CheckoutResponse>)
             .then(d => { if (d.checkoutUrl) window.location.href = d.checkoutUrl })
@@ -112,7 +112,7 @@ export default function PricingPage() {
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: user?.id, email: user?.email, plan: plan.id }),
+        body: JSON.stringify({ plan: plan.id }),
       })
       const data = await res.json() as CheckoutResponse
       if (!res.ok) throw new Error(data.error ?? "Unknown checkout error")
@@ -144,7 +144,7 @@ export default function PricingPage() {
       disabled: isCurrent("free"),
       highlight: false,
       isOneTime: false,
-      features: ["2 simulations / day", "Access to basic modes", "Standard agent count"],
+      features: ["2 standard simulations / month", "Standard mode only", "15 agents / 5 rounds"],
       locked: ["Deep analysis", "API Access", "Export options"],
     },
     {
@@ -168,12 +168,12 @@ export default function PricingPage() {
       name: "Pro",
       price: "$23.99",
       period: "/ mo",
-      description: "Unlimited intelligence for daily research.",
+      description: "High-volume intelligence for daily research.",
       cta: isCurrent("pro") ? "Current Plan" : "Upgrade to Pro",
       disabled: isCurrent("pro"),
       highlight: true, // white card
       isOneTime: false,
-      features: ["50 simulations / month", "All simulation modes", "10,000 agents per run", "Deep analysis & export"],
+      features: ["55 simulations / month", "All simulation modes", "Up to 250 agents / 15 rounds", "Deep analysis & export"],
       locked: ["API Access"],
     },
     {

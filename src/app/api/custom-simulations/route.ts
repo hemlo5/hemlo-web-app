@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/server";
-import { checkSimulationLimit, incrementSimulationCount } from "@/lib/simulation-usage";
+import { checkSimulationLimit, incrementSimulationCount, sanitizeSimulationParameters } from "@/lib/simulation-usage";
 
 export const dynamic = "force-dynamic";
 
@@ -72,12 +72,22 @@ export async function POST(req: NextRequest) {
     completed_at
   } = body;
 
-  // Only enforce daily limit when CREATING a new simulation (not when updating results)
+  // Only enforce plan quota when CREATING a new simulation (not when updating results)
+  let safeParams: { agentCount: number; rounds: number } | null = null;
   if (!id) {
     const limitCheck = await checkSimulationLimit(user.id);
     if (!limitCheck.allowed) {
       return NextResponse.json({ error: limitCheck.reason }, { status: 429 });
     }
+    safeParams = sanitizeSimulationParameters(
+      {
+        maxAgents: limitCheck.maxAgents ?? 15,
+        maxRounds: limitCheck.maxRounds ?? 5,
+        advancedParams: limitCheck.advancedParams ?? false,
+      },
+      agent_count,
+      rounds,
+    );
   }
 
   const payload: any = {
@@ -85,8 +95,6 @@ export async function POST(req: NextRequest) {
     scenario,
     domain,
     reality_seed,
-    agent_count,
-    rounds,
     platforms,
     llm_model,
     parallel_gen,
@@ -95,6 +103,14 @@ export async function POST(req: NextRequest) {
     mirofish_sim_id,
     mirofish_task_id,
   };
+
+  if (safeParams) {
+    payload.agent_count = safeParams.agentCount;
+    payload.rounds = safeParams.rounds;
+  } else {
+    if (agent_count !== undefined) payload.agent_count = agent_count;
+    if (rounds !== undefined) payload.rounds = rounds;
+  }
 
   if (result) payload.result = result;
   if (report_text) payload.report_text = report_text;

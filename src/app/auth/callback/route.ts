@@ -3,12 +3,17 @@ import { createClient } from '@/utils/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
+function safeNextPath(value: string | null) {
+  if (!value) return '/polymarket'
+  if (!value.startsWith('/') || value.startsWith('//')) return '/polymarket'
+  return value
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
 
-  // if "next" is in param, use it as the redirect URL
-  const next = searchParams.get('next') ?? '/polymarket'
+  const next = safeNextPath(searchParams.get('next'))
 
   // ── Determine the real origin ──────────────────────────────────────────────
   // Railway (and most reverse proxies) forward the real host via x-forwarded-host.
@@ -38,7 +43,7 @@ export async function GET(request: NextRequest) {
 
     const { error } = await supabase.auth.exchangeCodeForSession(code)
 
-    let redirectUrl = next.startsWith('http') ? next : `${origin}${next}`
+    let redirectUrl = `${origin}${next}`
 
     if (!error) {
       console.log('[auth/callback] ✓ Session exchanged — redirecting to', redirectUrl)
@@ -57,7 +62,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${redirectUrl}?auth_error=${encodeURIComponent(error.message)}`)
   }
 
-  let defaultErrUrl = next.startsWith('http') ? next : `${origin}${next}`
+  let defaultErrUrl = `${origin}${next}`
   // If no code was provided
   return NextResponse.redirect(`${defaultErrUrl}?auth_error=No_code_provided`)
 }

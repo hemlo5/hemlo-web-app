@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized. Please sign in to run simulations." }, { status: 401 })
     }
 
-    // Check daily limit using shared utility
+    // Check plan quota using shared utility
     const limitCheck = await checkSimulationLimit(user.id)
     if (!limitCheck.allowed) {
       return NextResponse.json({ error: limitCheck.reason }, { status: 429 })

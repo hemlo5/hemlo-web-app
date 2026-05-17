@@ -2,39 +2,19 @@
 
 import { useEffect, useState } from "react"
 import { motion } from "framer-motion"
-import { createClient } from "@/utils/supabase/client"
 
 export default function PaymentSuccessPage() {
   const [countdown, setCountdown] = useState(4)
 
   useEffect(() => {
-    // Fire upgrade in background
-    async function confirmUpgrade() {
-      try {
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          await fetch("/api/confirm-payment", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: user.id }),
-          })
-        }
-      } catch (err) {
-        console.error("[payment-success]", err)
-      }
-    }
-    confirmUpgrade()
-
-    // Countdown then hard redirect
     const interval = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) {
+      setCountdown((current) => {
+        if (current <= 1) {
           clearInterval(interval)
           window.location.href = "/profile"
           return 0
         }
-        return c - 1
+        return current - 1
       })
     }, 1000)
 
@@ -54,8 +34,6 @@ export default function PaymentSuccessPage() {
       padding: "24px",
       textAlign: "center",
     }}>
-
-      {/* Animated checkmark ring */}
       <motion.div
         initial={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -75,7 +53,10 @@ export default function PaymentSuccessPage() {
           initial={{ pathLength: 0, opacity: 0 }}
           animate={{ pathLength: 1, opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.4, ease: "easeOut" }}
-          width="44" height="44" viewBox="0 0 44 44" fill="none"
+          width="44"
+          height="44"
+          viewBox="0 0 44 44"
+          fill="none"
         >
           <motion.path
             d="M8 22L18 32L36 12"
@@ -90,7 +71,6 @@ export default function PaymentSuccessPage() {
         </motion.svg>
       </motion.div>
 
-      {/* Title */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -102,16 +82,15 @@ export default function PaymentSuccessPage() {
           fontWeight: 900,
           color: "#fff",
           margin: 0,
-          letterSpacing: "-0.5px",
+          letterSpacing: 0,
         }}>
-          Welcome to Pro 🎉
+          Payment Received
         </h1>
-        <p style={{ fontSize: 15, color: "#555", marginTop: 12, lineHeight: 1.6 }}>
-          Your account has been upgraded. You now have access to all premium features.
+        <p style={{ fontSize: 15, color: "#777", marginTop: 12, lineHeight: 1.6 }}>
+          Your plan will be finalized by Dodo's signed webhook shortly.
         </p>
       </motion.div>
 
-      {/* Features unlocked */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -129,10 +108,10 @@ export default function PaymentSuccessPage() {
         }}
       >
         {[
-          "10 simulations / day",
-          "All parameters unlocked",
-          "Priority AI compute",
-          "Export & API access",
+          "Secure payment verified by Dodo",
+          "Plan status refreshes automatically",
+          "Premium limits apply after webhook confirmation",
+          "You can check your tier on the profile page",
         ].map((feat, i) => (
           <motion.div
             key={feat}
@@ -141,13 +120,12 @@ export default function PaymentSuccessPage() {
             transition={{ delay: 0.8 + i * 0.1 }}
             style={{ display: "flex", alignItems: "center", gap: 10 }}
           >
-            <span style={{ color: "#22c55e", fontSize: 14, fontWeight: 700 }}>✓</span>
+            <span style={{ color: "#22c55e", fontSize: 12, fontWeight: 800 }}>OK</span>
             <span style={{ fontSize: 13, color: "#888" }}>{feat}</span>
           </motion.div>
         ))}
       </motion.div>
 
-      {/* Progress bar + countdown */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -162,11 +140,10 @@ export default function PaymentSuccessPage() {
             style={{ height: "100%", background: "#22c55e", borderRadius: 99 }}
           />
         </div>
-        <p style={{ fontSize: 12, color: "#333", margin: 0 }}>
+        <p style={{ fontSize: 12, color: "#444", margin: 0 }}>
           Redirecting to your profile in {countdown}s
         </p>
       </motion.div>
-
     </div>
   )
 }

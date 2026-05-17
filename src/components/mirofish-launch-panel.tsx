@@ -162,6 +162,7 @@ export function MirofishLaunchPanel({
   const [depthMode, setDepthMode] = useState<"standard" | "super" | "deep" | "custom">("standard");
   const [agents, setAgents] = useState(15);
   const [rounds, setRounds] = useState(5);
+  const [userTier, setUserTier] = useState("free");
   const [parallelGen] = useState(3);
   const [llmModel] = useState("deepseek-v3");
   const [phase, setPhase] = useState<LaunchPhase>("idle");
@@ -184,6 +185,7 @@ export function MirofishLaunchPanel({
   const graphNodesAccRef = useRef<any[]>([]);
   const graphEdgesAccRef = useRef<any[]>([]);
   const liveGraphRootRef = useRef<string>("scenario_root");
+  const canUseAdvancedParams = ["pro", "premium", "founder"].includes(userTier.toLowerCase());
 
   useEffect(() => {
     if (!market) return;
@@ -210,6 +212,20 @@ export function MirofishLaunchPanel({
     abortRef.current = null;
     esRef.current?.close();
     esRef.current = null;
+  }, [market]);
+
+  useEffect(() => {
+    if (!market) return;
+    let cancelled = false;
+    fetch("/api/usage")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!cancelled && data?.tier) setUserTier(String(data.tier));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [market]);
 
   useEffect(() => {
@@ -255,6 +271,7 @@ export function MirofishLaunchPanel({
   };
 
   const handleMode = (mode: "standard" | "super" | "deep" | "custom", nextAgents: number, nextRounds: number) => {
+    if (mode !== "standard" && !canUseAdvancedParams) return;
     setDepthMode(mode);
     if (mode !== "custom") {
       setAgents(nextAgents);
@@ -450,12 +467,14 @@ export function MirofishLaunchPanel({
       const usageRes = await fetch("/api/usage");
       if (usageRes.ok) {
         const usage = await usageRes.json();
-        if (usage.usageToday >= usage.limit) {
+        const used = usage.usage ?? usage.usageToday ?? 0;
+        const period = usage.window === "month" ? "this month" : "total";
+        if (used >= usage.limit) {
           const paid = ["pro", "premium", "founder", "starter"].includes(String(usage.tier));
           setLaunchError(
             paid
-              ? `${usage.usageToday}/${usage.limit} simulations used today on your ${usage.tier} plan. Your quota resets at midnight UTC.`
-              : `You've used ${usage.usageToday}/${usage.limit} free simulations today.`
+              ? `${used}/${usage.limit} simulations used ${period} on your ${usage.label || usage.tier} plan.`
+              : `You've used ${used}/${usage.limit} free simulations ${period}.`
           );
           setPhase("error");
           return;
@@ -543,8 +562,8 @@ export function MirofishLaunchPanel({
     };
 
     try {
-      const modalUrl = process.env.NEXT_PUBLIC_MODAL_URL || "https://vaishumaniket--hemlo-mirofish-run-simulation.modal.run";
-      const url = new URL(modalUrl);
+      const modalUrl = "/api/mirofish-run";
+      const url = new URL(modalUrl, window.location.origin);
       url.searchParams.append("question", scenario);
       url.searchParams.append("sim_id", simDbId);
       url.searchParams.append("reality_seed", simulationSeed);
@@ -882,9 +901,9 @@ export function MirofishLaunchPanel({
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
                       {[
                         { id: "standard", label: "Standard", desc: "15 agents, 5 rounds", agents: 15, rounds: 5, locked: false },
-                        { id: "super", label: "Super", desc: "100 agents, 10 rounds", agents: 100, rounds: 10, locked: false },
-                        { id: "deep", label: "Deep", desc: "250 agents, 15 rounds", agents: 250, rounds: 15, locked: false },
-                        { id: "custom", label: "Custom", desc: "Adjust agents and rounds", agents: 50, rounds: 8, locked: false },
+                        { id: "super", label: "Super", desc: "100 agents, 10 rounds", agents: 100, rounds: 10, locked: !canUseAdvancedParams },
+                        { id: "deep", label: "Deep", desc: "250 agents, 15 rounds", agents: 250, rounds: 15, locked: !canUseAdvancedParams },
+                        { id: "custom", label: "Custom", desc: "Adjust agents and rounds", agents: 50, rounds: 8, locked: !canUseAdvancedParams },
                       ].map((opt) => {
                         const active = depthMode === opt.id;
                         return (

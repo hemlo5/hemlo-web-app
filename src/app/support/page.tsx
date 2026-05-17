@@ -22,7 +22,7 @@ const faqs = [
   },
   {
     q: "What are the simulation limits?",
-    a: "Because running parallel agent networks is highly compute-intensive, accounts on the Free plan are limited to 2 custom simulations per day. Pro users have priority compute access and a limit of 10 daily simulations with lengthier context rounds.",
+    a: "Because running parallel agent networks is highly compute-intensive, accounts on the Free plan are limited to 2 standard simulations per month. Pro users get priority compute access, all simulation modes, and 55 simulations per month.",
   },
 ];
 

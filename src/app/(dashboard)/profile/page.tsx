@@ -14,7 +14,7 @@ const PLANS = [
     name: "Free",
     price: "$0",
     period: "",
-    features: ["2 simulations / day", "Standard parameters", "Dashboard access"],
+    features: ["2 standard simulations / month", "Standard parameters", "Dashboard access"],
     cta: "Current Plan",
     tier: "free",
   },
@@ -23,7 +23,7 @@ const PLANS = [
     name: "Starter Pack",
     price: "$5",
     period: "",
-    features: ["5 extra simulations", "One-time purchase", "No recurring fees"],
+    features: ["5 simulations total", "One-time purchase", "No recurring fees"],
     cta: "Buy Starter Pack",
     isTripwire: true,
   },
@@ -32,7 +32,7 @@ const PLANS = [
     name: "Pro",
     price: "$23.99",
     period: "/mo",
-    features: ["50 simulations / month", "All parameters unlocked", "Deep analysis & export"],
+    features: ["55 simulations / month", "All parameters unlocked", "Deep analysis & export"],
     cta: "Upgrade to Pro",
     tier: "pro",
     highlight: true,
@@ -90,7 +90,7 @@ export default function ProfilePage() {
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: user.id, email: user.email, plan: planId }),
+        body: JSON.stringify({ plan: planId }),
       })
       const data = await res.json()
       if (!res.ok || !data.checkoutUrl) {

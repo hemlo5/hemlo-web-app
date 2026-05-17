@@ -143,6 +143,17 @@ function isUsableCustomResult(sim: any) {
   return true
 }
 
+function isPublicCronSimulation(sim: any) {
+  const result = sim?.result || {}
+  const marketInfo = result?.marketInfo || result?.market_info || {}
+  const cronUserId = process.env.CRON_USER_ID
+  return (
+    marketInfo?.simulatedBy === "modal_trending_cron" ||
+    (Boolean(cronUserId) && sim?.user_id === cronUserId) ||
+    sim?.user_id === "modal_trending_cron"
+  )
+}
+
 function normalizeOutcomes(result: any, marketInfo: any): MarketOutcome[] {
   const marketOutcomes = Array.isArray(result?.market_outcomes) ? result.market_outcomes : []
   const infoOutcomes = Array.isArray(marketInfo?.outcomes) ? marketInfo.outcomes : []
@@ -392,7 +403,7 @@ export async function GET(req: NextRequest) {
 
     let customQuery = supa
       .from("custom_simulations")
-      .select("id, scenario, domain, status, created_at, completed_at, result, primary_probability, agent_count, rounds")
+      .select("id, user_id, scenario, domain, status, created_at, completed_at, result, primary_probability, agent_count, rounds")
       .eq("status", "completed")
       .order("completed_at", { ascending: false })
       .limit(customLimit)
@@ -405,7 +416,7 @@ export async function GET(req: NextRequest) {
       customQuery,
       supa
         .from("simulations")
-        .select("id, topic, created_at, analysis_data, crowd_odds, hemlo_odds, divergence, market_type, outcomes")
+        .select("id, user_id, topic, created_at, analysis_data, crowd_odds, hemlo_odds, divergence, market_type, outcomes")
         .order("created_at", { ascending: false })
         .limit(10),
     ])
@@ -415,6 +426,7 @@ export async function GET(req: NextRequest) {
     }
 
     const usableRows = (customRows || [])
+      .filter(isPublicCronSimulation)
       .filter(isUsableCustomResult)
       .map(mapCustomSimulation)
 
@@ -424,7 +436,12 @@ export async function GET(req: NextRequest) {
       : []
     const enrichedMarketRows = await Promise.all(marketRows.map(enrichMarketSimulation))
     const fallbackLegacyRows = includeAllSources || enrichedMarketRows.length === 0
-      ? (legacyRows || []).map(mapLegacySimulation)
+      ? (legacyRows || [])
+          .filter((row: any) => {
+            const cronUserId = process.env.CRON_USER_ID
+            return !row?.user_id || (Boolean(cronUserId) && row?.user_id === cronUserId) || row?.user_id === "modal_trending_cron"
+          })
+          .map(mapLegacySimulation)
       : []
 
     const mapped = dedupeMarkets([...enrichedMarketRows, ...nonMarketRows, ...fallbackLegacyRows])
