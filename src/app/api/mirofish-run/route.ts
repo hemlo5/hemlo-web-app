@@ -40,6 +40,43 @@ function signParams(params: URLSearchParams) {
   params.set("sig", signature)
 }
 
+function compactMarketOptions(raw: string | null) {
+  if (!raw) return ""
+
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return raw
+
+    const compacted = parsed
+      .slice(0, 40)
+      .map((item) => {
+        const label =
+          item?.label ??
+          item?.name ??
+          item?.title ??
+          item?.outcome ??
+          item?.groupItemTitle ??
+          ""
+        const prob =
+          item?.prob ??
+          item?.probability ??
+          item?.price ??
+          item?.lastTradePrice ??
+          item?.lastPrice ??
+          null
+        return {
+          label: String(label).trim(),
+          prob: prob === null || prob === undefined || prob === "" ? null : Number(prob),
+        }
+      })
+      .filter((item) => item.label)
+
+    return JSON.stringify(compacted)
+  } catch {
+    return raw.length > 6000 ? "" : raw
+  }
+}
+
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -47,7 +84,17 @@ function getAdminClient() {
   return createSupabaseAdmin(url, key, { auth: { persistSession: false } })
 }
 
-export async function GET(req: NextRequest) {
+function paramsFromBody(body: unknown) {
+  const params = new URLSearchParams()
+  if (!body || typeof body !== "object") return params
+  for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+    if (value === undefined || value === null) continue
+    params.set(key, typeof value === "string" ? value : JSON.stringify(value))
+  }
+  return params
+}
+
+async function handleRunRequest(req: NextRequest, incoming: URLSearchParams) {
   const authClient = await createServerSupabase()
   const { data: { user } } = await authClient.auth.getUser()
 
@@ -55,7 +102,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Sign in before running a simulation" }, { status: 401 })
   }
 
-  const incoming = new URL(req.url).searchParams
   const simId = incoming.get("sim_id")
   const wantsSignedUrl = incoming.get("transport") === "url"
   if (!simId) {
@@ -115,7 +161,7 @@ export async function GET(req: NextRequest) {
   upstreamParams.set("agent_count", String(safeParams.agentCount))
   upstreamParams.set("rounds", String(safeParams.rounds))
   upstreamParams.set("domain", incoming.get("domain") || "custom")
-  upstreamParams.set("market_options", incoming.get("market_options") || "")
+  upstreamParams.set("market_options", compactMarketOptions(incoming.get("market_options")))
   upstreamParams.set("market_type", incoming.get("market_type") || "")
   upstreamParams.set("test_mode", "")
   upstreamParams.set("fast_mode", plan.advancedParams ? incoming.get("fast_mode") || "" : "")
@@ -172,4 +218,13 @@ export async function GET(req: NextRequest) {
   const redirect = NextResponse.redirect(upstreamUrl, 307)
   redirect.headers.set("Cache-Control", "no-store")
   return redirect
+}
+
+export async function GET(req: NextRequest) {
+  return handleRunRequest(req, new URL(req.url).searchParams)
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}))
+  return handleRunRequest(req, paramsFromBody(body))
 }

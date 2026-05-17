@@ -1,13 +1,17 @@
 export async function createMirofishEventSource(routeUrl: URL): Promise<EventSource> {
-  const signedUrlRequest = new URL(routeUrl.toString());
-  signedUrlRequest.searchParams.set("transport", "url");
+  const endpoint = new URL(routeUrl.pathname, routeUrl.origin);
+  const params = Object.fromEntries(routeUrl.searchParams.entries());
+  params.transport = "url";
   // The full seed is stored on custom_simulations before this call. Keeping it
-  // out of query strings avoids production proxy and browser URL limits.
-  signedUrlRequest.searchParams.set("reality_seed", "");
+  // out of request URLs avoids production proxy and browser URL limits.
+  params.reality_seed = "";
 
-  const res = await fetch(signedUrlRequest.toString(), {
+  const res = await fetch(endpoint.toString(), {
+    method: "POST",
     cache: "no-store",
     credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
   });
 
   const contentType = res.headers.get("content-type") || "";
