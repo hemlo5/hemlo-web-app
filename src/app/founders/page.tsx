@@ -1,10 +1,64 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import { MarketingShell } from "@/components/marketing-shell";
+
+const FOUNDER_IMAGE = "/aniket-vaishu.png";
+const BASE_URL = "https://hemloai.com";
 
 export const metadata: Metadata = {
   title: "Founders | Hemlo",
-  description: "The founder story behind Hemlo and MiroFish-powered prediction market intelligence.",
+  description:
+    "Meet Aniket Vaishu — 17-year-old founder of Hemlo. Builder of backtesting engines, DeFi arbitrage bots, and AI-powered prediction market intelligence.",
   alternates: { canonical: "/founders" },
+  openGraph: {
+    title: "Aniket Vaishu — Founder of Hemlo",
+    description:
+      "17-year-old builder behind Hemlo. From algorithmic trading to DeFi arbitrage to AI-powered forecasting — this is the story.",
+    url: `${BASE_URL}/founders`,
+    siteName: "Hemlo",
+    images: [
+      {
+        url: `${BASE_URL}${FOUNDER_IMAGE}`,
+        width: 370,
+        height: 490,
+        alt: "Aniket Vaishu, Founder of Hemlo — 17-year-old builder and entrepreneur from India",
+      },
+    ],
+    type: "profile",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Aniket Vaishu — Founder of Hemlo",
+    description:
+      "17-year-old builder behind Hemlo. From algorithmic trading to DeFi arbitrage to AI-powered forecasting.",
+    images: [`${BASE_URL}${FOUNDER_IMAGE}`],
+  },
+};
+
+// JSON-LD structured data for Google indexing
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Person",
+  name: "Aniket Vaishu",
+  jobTitle: "Founder",
+  worksFor: {
+    "@type": "Organization",
+    name: "Hemlo",
+    url: BASE_URL,
+  },
+  url: `${BASE_URL}/founders`,
+  image: `${BASE_URL}${FOUNDER_IMAGE}`,
+  description:
+    "17-year-old entrepreneur and builder from India. Founder of Hemlo, creator of MiroFish AI prediction engine. Previously built backtesting engines, DeFi arbitrage bots, and AI web agents.",
+  nationality: "Indian",
+  knowsAbout: [
+    "Algorithmic Trading",
+    "DeFi",
+    "Prediction Markets",
+    "Artificial Intelligence",
+    "Software Engineering",
+  ],
 };
 
 const story = [
@@ -23,23 +77,55 @@ export default function FoundersPage() {
       title="Aniket Vaishu"
       description="Founder · Hemlo"
     >
-      <section style={{ background: "#ffffff", color: "#050505", padding: "clamp(26px, 5vw, 48px)", marginBottom: 54 }}>
-        <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(0,0,0,0.35)", marginBottom: 22 }}>
-          Why I built Hemlo
+      {/* JSON-LD structured data injected into <head> */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+
+      {/* White box: text left + photo right */}
+      <section style={{ background: "#ffffff", color: "#050505", padding: "clamp(26px, 5vw, 48px)", marginBottom: 54, display: "flex", alignItems: "flex-start", gap: "clamp(24px, 4vw, 56px)" }}>
+        {/* Left: text */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(0,0,0,0.35)", marginBottom: 22 }}>
+            Why I built Hemlo
+          </div>
+          <h2 style={{ margin: "0 0 24px", fontSize: "clamp(22px, 3.5vw, 36px)", lineHeight: 1.15 }}>
+            Every system I built kept running into the same wall: there was no reliable way to know what would actually happen next.
+          </h2>
+          <div style={{ display: "grid", gap: 16, color: "rgba(0,0,0,0.62)", lineHeight: 1.75 }}>
+            <p style={{ margin: 0 }}>
+              In algo trading, my backtests looked great in simulation and broke apart in live markets. In DeFi arbitrage, I could see the opportunity but couldn't model the cascade — what happens when you execute, who else reacts, what changes.
+            </p>
+            <p style={{ margin: 0 }}>
+              The tools that existed were either single-prompt AI — which hallucinates its way to confidence — or prediction markets, which just price the crowd's existing bias. Neither is actually telling you what's likely.
+            </p>
+            <p style={{ margin: 0 }}>
+              The answer wasn't a smarter prompt or a better betting pool — it was a fundamentally different approach to how AI should reason about uncertainty. I built Hemlo around that.
+            </p>
+          </div>
         </div>
-        <h2 style={{ maxWidth: 760, margin: "0 0 24px", fontSize: "clamp(26px, 4vw, 38px)", lineHeight: 1.15 }}>
-          Every system I built kept running into the same wall: there was no reliable way to know what would actually happen next.
-        </h2>
-        <div style={{ display: "grid", gap: 16, maxWidth: 760, color: "rgba(0,0,0,0.62)", lineHeight: 1.75 }}>
-          <p style={{ margin: 0 }}>
-            In algo trading, my backtests looked great in simulation and broke apart in live markets. In DeFi arbitrage, I could see the opportunity but couldn't model the cascade — what happens when you execute, who else reacts, what changes.
-          </p>
-          <p style={{ margin: 0 }}>
-            The tools that existed were either single-prompt AI — which hallucinates its way to confidence — or prediction markets, which just price the crowd's existing bias. Neither is actually telling you what's likely.
-          </p>
-          <p style={{ margin: 0 }}>
-            The answer wasn't a smarter prompt or a better betting pool — it was a fundamentally different approach to how AI should reason about uncertainty. I built Hemlo around that.
-          </p>
+
+        {/* Right: founder photo */}
+        <div
+          style={{
+            position: "relative",
+            width: "clamp(160px, 22vw, 260px)",
+            aspectRatio: "3 / 4",
+            borderRadius: 14,
+            overflow: "hidden",
+            flexShrink: 0,
+            boxShadow: "0 6px 32px rgba(0,0,0,0.18)",
+          }}
+        >
+          <Image
+            src={FOUNDER_IMAGE}
+            alt="Aniket Vaishu, Founder of Hemlo — 17-year-old builder and entrepreneur from India"
+            fill
+            sizes="(max-width: 768px) 160px, 260px"
+            style={{ objectFit: "cover", objectPosition: "center top" }}
+            priority
+          />
         </div>
       </section>
 
