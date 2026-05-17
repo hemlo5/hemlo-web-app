@@ -150,46 +150,11 @@ export async function GET(req: NextRequest) {
     .eq("id", simId)
     .eq("user_id", user.id)
 
-  let upstream: Response
-  try {
-    upstream = await fetch(upstreamUrl, {
-      headers: { Accept: "text/event-stream" },
-      cache: "no-store",
-      signal: req.signal,
-    })
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err)
-    await admin
-      .from("custom_simulations")
-      .update({ status: "failed", updated_at: new Date().toISOString() })
-      .eq("id", simId)
-      .eq("user_id", user.id)
-    return NextResponse.json(
-      { error: "Could not connect to Modal engine", detail: message.slice(0, 500) },
-      { status: 502 }
-    )
-  }
-
-  if (!upstream.ok || !upstream.body) {
-    const body = await upstream.text().catch(() => "")
-    await admin
-      .from("custom_simulations")
-      .update({ status: "failed", updated_at: new Date().toISOString() })
-      .eq("id", simId)
-      .eq("user_id", user.id)
-    return NextResponse.json(
-      { error: "Modal engine rejected the request", detail: body.slice(0, 500) },
-      { status: upstream.status || 502 }
-    )
-  }
-
-  return new Response(upstream.body, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  })
+  // Do not proxy the SSE body through Railway/Next. Long-running server-side
+  // proxy streams can be closed by platform/network timeouts even while Modal
+  // keeps running. A short-lived signed redirect keeps auth and plan checks here
+  // but lets the browser stream directly from Modal.
+  const redirect = NextResponse.redirect(upstreamUrl, 307)
+  redirect.headers.set("Cache-Control", "no-store")
+  return redirect
 }
